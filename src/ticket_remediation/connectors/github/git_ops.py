@@ -31,8 +31,12 @@ def clone_or_update(repo_full_name: str, token: str, default_branch: str, work_d
 
 
 def create_branch(repo_path: Path, branch_name: str, base_branch: str) -> None:
+    """Uses -B (create-or-reset) rather than -b: local dedup state (data/state.db) is
+    documented as safe to delete to reset dev state, but a leftover local branch from an
+    earlier attempt can still exist in the reused work/ clone — -B resets it to the
+    current base_branch instead of failing with "branch already exists"."""
     _run(["git", "checkout", base_branch], cwd=repo_path)
-    _run(["git", "checkout", "-b", branch_name], cwd=repo_path)
+    _run(["git", "checkout", "-B", branch_name], cwd=repo_path)
 
 
 def commit_all(repo_path: Path, message: str) -> None:

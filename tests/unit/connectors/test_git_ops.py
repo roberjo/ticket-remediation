@@ -10,7 +10,26 @@ def test_create_branch_runs_expected_argv(mock_run, tmp_path):
 
     calls = [c.args[0] for c in mock_run.call_args_list]
     assert ["git", "checkout", "main"] in calls
-    assert ["git", "checkout", "-b", "remediate/AVREM-1-fix"] in calls
+    # -B (not -b): create-or-reset, so a leftover branch from an earlier attempt
+    # doesn't crash with "branch already exists" — see the regression test below.
+    assert ["git", "checkout", "-B", "remediate/AVREM-1-fix"] in calls
+
+
+def test_create_branch_is_safe_to_call_twice_for_the_same_branch(tmp_path):
+    """Regression test: local dedup state (data/state.db) is documented as safe to
+    delete to reset dev state, but the reused work/ clone can still have a branch left
+    over from an earlier attempt. create_branch must reset it, not fail."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+
+    git_ops.create_branch(repo, "remediate/AVREM-1-fix", "main")
+    (repo / "README.md").write_text("# first attempt\n")
+    git_ops.commit_all(repo, "first attempt")
+
+    # Second attempt against the same branch name must not raise.
+    git_ops.create_branch(repo, "remediate/AVREM-1-fix", "main")
+
+    assert (repo / "README.md").read_text() == "# demo\n"  # reset back to base_branch's content
 
 
 @patch("ticket_remediation.connectors.github.git_ops.subprocess.run")
