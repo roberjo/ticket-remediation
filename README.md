@@ -33,6 +33,13 @@ flowchart LR
 State (which SNOW ticket became which Jira issue, and which Jira issue already has a PR) lives
 in a local SQLite file, so re-running either pipeline is safe — nothing gets created twice.
 
+## Documentation
+
+Full solution architecture documentation — system context, key decisions, C4 building-block and
+UML class diagrams, sequence diagrams for every flow, the data/state model, use cases, deployment
+views, and known risks — lives in [`docs/architecture/`](docs/architecture/README.md). Start
+there for anything beyond "how do I run this."
+
 ## Prerequisites
 
 - Python 3.11+
