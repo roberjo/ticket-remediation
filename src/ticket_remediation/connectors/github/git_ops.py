@@ -18,7 +18,10 @@ def clone_or_update(repo_full_name: str, token: str, default_branch: str, work_d
     url = _authenticated_url(repo_full_name, token)
     if not (repo_path / ".git").exists():
         repo_path.parent.mkdir(parents=True, exist_ok=True)
-        _run(["git", "clone", url, str(repo_path)], cwd=work_dir)
+        # Destination is relative to cwd=work_dir, so pass just the basename here —
+        # passing the full repo_path (which already includes work_dir) would clone
+        # into work_dir/work_dir/<repo_name> instead.
+        _run(["git", "clone", url, repo_path.name], cwd=work_dir)
     else:
         _run(["git", "remote", "set-url", "origin", url], cwd=repo_path)
         _run(["git", "fetch", "origin", default_branch], cwd=repo_path)
