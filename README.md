@@ -49,7 +49,7 @@ servers implement the subset of the ServiceNow Table API and Jira REST API the c
 seeded with synthetic AVIT findings and a seeded `AVREM` Jira project.
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/roberjo/ticket-remediation.git
 cd ticket-remediation
 uv sync --extra mocks --group dev
 
