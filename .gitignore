@@ -1,0 +1,48 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# --- Tooling caches ---
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets / environment files ---
+# Never commit real credentials. Templates (checked-in on purpose, no secrets
+# in them) are explicitly un-ignored below.
+.env
+.env.*
+!.env.example
+!.env.mock.example
+*.pem
+*.key
+*.p12
+
+# --- Local app state (safe to delete, never worth committing) ---
+data/*.db
+data/*.sqlite3
+work/*/
+*.log
+
+# --- Nested standalone repo ---
+# scaffold/vulnerable-react-demo-app is its own independent git repo, pushed to
+# github.com/roberjo/vulnerable-react-demo-app. Excluded here (not a submodule)
+# so `git add -A` in this repo can't accidentally create a broken gitlink.
+scaffold/
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db

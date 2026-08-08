@@ -1,0 +1,14 @@
+# Jira project/component -> GitHub repo routing rules.
+# One route for the v1 slice: AVREM findings against the frontend or backend-api
+# component of the sample vulnerable app go to that app's repo.
+# Fill in `owner` with your real GitHub username/org before running against a real repo.
+routes:
+  - match:
+      project_key: AVREM
+      components:
+        - frontend
+        - backend-api
+    repo:
+      owner: roberjo
+      name: vulnerable-react-demo-app
+      default_branch: main

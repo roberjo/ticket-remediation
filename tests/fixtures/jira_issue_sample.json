@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "key": "AVREM-1",
+      "fields": {
+        "project": {"key": "AVREM"},
+        "summary": "[High] Reflected Cross-Site Scripting (XSS) in frontend: /search",
+        "description": "User-supplied input from the 'q' query parameter on /search is rendered without sanitization.",
+        "status": {"name": "Ready for Remediation"},
+        "components": [{"name": "frontend"}],
+        "labels": ["High", "Reflected-Cross-Site-Scripting-XSS"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# SNOW table -> Jira field mapping rules.
+# One rule for the v1 slice: AVIT (application-vulnerability) findings -> the AVREM board.
+# Add more entries here to broaden ingest scope later; no code changes required.
+rules:
+  - snow_table: x_avit_findings
+    jira:
+      project_key: AVREM
+      issue_type: Vulnerability
+      # Name of the SNOW ticket field whose value becomes the Jira component 1:1.
+      component_field: affected_component
+      # SNOW ticket fields turned into Jira labels (one label per field value).
+      label_fields:
+        - severity
+        - vuln_type
+      # Python str.format templates; placeholders are SnowTicket field names.
+      summary_template: "[{severity}] {vuln_type} in {affected_component}: {short_description}"
+      description_template: |
+        {description}
+
+        CWE: {cwe_id}
+        CVSS: {cvss_score}
+        Affected: {affected_url_or_file}
+        Detected by: {source_scanner}
+        ServiceNow ticket: {number} ({sys_id})

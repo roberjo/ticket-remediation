@@ -1,0 +1,10 @@
+routes:
+  - match:
+      project_key: AVREM
+      components:
+        - frontend
+        - backend-api
+    repo:
+      owner: demo-org
+      name: vulnerable-react-demo-app
+      default_branch: main

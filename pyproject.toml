@@ -1,0 +1,59 @@
+[project]
+name = "ticket-remediation"
+version = "0.1.0"
+description = "ServiceNow -> Jira ingestion and Jira -> GitHub PR remediation pipelines"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "pygithub>=2.3",
+    "anthropic>=0.34",
+    "typer>=0.12",
+    "google-genai>=2.17.0",
+]
+
+[project.optional-dependencies]
+mocks = [
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "faker>=26.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ticket_remediation", "mock_servers"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["ticket_remediation"]
+mypy_path = "src"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "contract: spins up an in-process mock server and hits it over real HTTP",
+]

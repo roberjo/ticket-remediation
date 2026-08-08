@@ -1,0 +1,19 @@
+{
+  "result": [
+    {
+      "sys_id": "abc123",
+      "number": "AVIT0000001",
+      "short_description": "[High] Reflected Cross-Site Scripting (XSS) in frontend: /search",
+      "description": "User-supplied input from the 'q' query parameter on /search is rendered without sanitization.\n\nRemediation guidance: Sanitize/escape user input before rendering.",
+      "severity": "High",
+      "cvss_score": 7.2,
+      "vuln_type": "Reflected Cross-Site Scripting (XSS)",
+      "cwe_id": "CWE-79",
+      "affected_component": "frontend",
+      "affected_url_or_file": "/search",
+      "source_scanner": "Snyk",
+      "discovered_at": "2026-08-01T00:00:00+00:00",
+      "priority": "2 - High"
+    }
+  ]
+}

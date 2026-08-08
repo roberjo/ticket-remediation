@@ -1,0 +1,10 @@
+# Deliberately malformed: jira.component_field is missing.
+rules:
+  - snow_table: x_avit_findings
+    jira:
+      project_key: AVREM
+      issue_type: Vulnerability
+      label_fields:
+        - severity
+      summary_template: "{short_description}"
+      description_template: "{description}"

@@ -1,0 +1,14 @@
+rules:
+  - snow_table: x_avit_findings
+    jira:
+      project_key: AVREM
+      issue_type: Vulnerability
+      component_field: affected_component
+      label_fields:
+        - severity
+        - vuln_type
+      summary_template: "[{severity}] {vuln_type} in {affected_component}: {short_description}"
+      description_template: |
+        {description}
+
+        CWE: {cwe_id}
