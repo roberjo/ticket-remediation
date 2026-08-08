@@ -1,6 +1,7 @@
 # Jira project/component -> GitHub repo routing rules.
-# One route for the v1 slice: AVREM findings against the frontend or backend-api
-# component of the sample vulnerable app go to that app's repo.
+# One route for the v1 slice: AVREM findings against the frontend, backend-api, or
+# infra-config (Terraform, under infra/) component of the sample vulnerable app all
+# go to that same app's repo, since the Terraform files accompany the app in-repo.
 # Fill in `owner` with your real GitHub username/org before running against a real repo.
 routes:
   - match:
@@ -8,6 +9,7 @@ routes:
       components:
         - frontend
         - backend-api
+        - infra-config
     repo:
       owner: roberjo
       name: vulnerable-react-demo-app

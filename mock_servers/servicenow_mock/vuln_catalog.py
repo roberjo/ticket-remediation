@@ -294,4 +294,93 @@ CATALOG: list[CatalogEntry] = [
         "component": "backend-api",
         "demo_relevant": False,
     },
+    {
+        "vuln_type": "S3 Bucket Publicly Accessible",
+        "cwe_id": "CWE-284",
+        "cvss_range": (7.1, 8.6),
+        "severity": "High",
+        "short_description": "S3 bucket has a public-read ACL with no block-public-access in {file}",
+        "description": (
+            "The S3 bucket defined in {file} is configured with a public-read ACL and has no "
+            "aws_s3_bucket_public_access_block resource guarding it, exposing its contents to "
+            "anyone on the internet."
+        ),
+        "remediation_hint": (
+            "Remove the public-read ACL, add an aws_s3_bucket_public_access_block resource "
+            "blocking all public access, and serve content via CloudFront with origin access "
+            "control instead of a public bucket."
+        ),
+        "component": "infra-config",
+        "demo_relevant": True,
+    },
+    {
+        "vuln_type": "S3 Bucket Missing Server-Side Encryption",
+        "cwe_id": "CWE-311",
+        "cvss_range": (4.9, 6.5),
+        "severity": "Medium",
+        "short_description": "S3 bucket has no server-side encryption configured in {file}",
+        "description": (
+            "The S3 bucket defined in {file} has no server-side encryption configuration, "
+            "leaving data at rest unencrypted."
+        ),
+        "remediation_hint": (
+            "Add an aws_s3_bucket_server_side_encryption_configuration resource enabling SSE "
+            "(AES256 or a customer-managed KMS key)."
+        ),
+        "component": "infra-config",
+        "demo_relevant": True,
+    },
+    {
+        "vuln_type": "Security Group Allows Unrestricted SSH Access",
+        "cwe_id": "CWE-284",
+        "cvss_range": (8.1, 9.8),
+        "severity": "Critical",
+        "short_description": "Security group allows SSH from 0.0.0.0/0 in {file}",
+        "description": (
+            "The security group defined in {file} allows inbound TCP port 22 (SSH) from "
+            "0.0.0.0/0, exposing the host to SSH access attempts from anywhere on the internet."
+        ),
+        "remediation_hint": (
+            "Restrict SSH ingress to a known CIDR range (VPN/bastion), or remove direct SSH "
+            "access entirely in favor of SSM Session Manager."
+        ),
+        "component": "infra-config",
+        "demo_relevant": True,
+    },
+    {
+        "vuln_type": "Overly Permissive IAM Policy",
+        "cwe_id": "CWE-732",
+        "cvss_range": (8.6, 9.8),
+        "severity": "Critical",
+        "short_description": "IAM policy grants wildcard Action and Resource in {file}",
+        "description": (
+            'The IAM policy defined in {file} grants Action "*" on Resource "*", giving the '
+            "attached role full access to every action on every resource in the account."
+        ),
+        "remediation_hint": (
+            "Scope the policy's Action and Resource lists to only the specific permissions the "
+            "role actually needs (least privilege)."
+        ),
+        "component": "infra-config",
+        "demo_relevant": True,
+    },
+    {
+        "vuln_type": "Hardcoded Secret in Terraform Variable Default",
+        "cwe_id": "CWE-798",
+        "cvss_range": (7.0, 8.6),
+        "severity": "High",
+        "short_description": "Hardcoded secret default value in {file}",
+        "description": (
+            "A Terraform variable in {file} has a live-looking secret hardcoded as its default "
+            "value and is not marked sensitive, exposing it in source control, plan output, and "
+            "state files."
+        ),
+        "remediation_hint": (
+            "Remove the hardcoded default, mark the variable sensitive = true, and source the "
+            "real value from a secrets manager (AWS Secrets Manager / SSM Parameter Store) at "
+            "apply time."
+        ),
+        "component": "infra-config",
+        "demo_relevant": True,
+    },
 ]

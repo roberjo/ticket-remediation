@@ -8,6 +8,8 @@ from .vuln_catalog import CATALOG, CatalogEntry
 SCANNERS = ["Checkmarx", "Snyk", "Tenable", "Qualys", "OWASP ZAP", "Semgrep"]
 PARAM_NAMES = ["q", "search", "redirect", "callback", "userId", "token", "next", "id", "sort"]
 PRIORITIES = ["1 - Critical", "2 - High", "3 - Moderate", "4 - Low"]
+APP_CODE_EXTENSIONS = ["js", "jsx", "ts", "json"]
+INFRA_CODE_EXTENSIONS = ["tf"]
 
 
 def _priority_for_severity(severity: str) -> str:
@@ -21,7 +23,8 @@ def _priority_for_severity(severity: str) -> str:
 
 def _render(entry: CatalogEntry, fake: Faker) -> dict:
     endpoint = "/" + "/".join(fake.uri_path().split("/")[:3])
-    file_path = fake.file_path(depth=2, extension=random.choice(["js", "jsx", "ts", "json"]))
+    extensions = INFRA_CODE_EXTENSIONS if entry["component"] == "infra-config" else APP_CODE_EXTENSIONS
+    file_path = fake.file_path(depth=2, extension=random.choice(extensions))
     param = random.choice(PARAM_NAMES)
     ctx = {"endpoint": endpoint, "file": file_path, "param": param}
 
@@ -39,7 +42,9 @@ def _render(entry: CatalogEntry, fake: Faker) -> dict:
         "vuln_type": entry["vuln_type"],
         "cwe_id": entry["cwe_id"],
         "affected_component": entry["component"],
-        "affected_url_or_file": endpoint if random.random() < 0.6 else file_path,
+        "affected_url_or_file": (
+            file_path if entry["component"] == "infra-config" or random.random() >= 0.6 else endpoint
+        ),
         "source_scanner": random.choice(SCANNERS),
         "discovered_at": discovered.isoformat(),
         "priority": _priority_for_severity(entry["severity"]),

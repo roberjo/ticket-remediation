@@ -27,6 +27,7 @@ _issues = RecordStore(id_prefix=PROJECT_KEY)
 
 def _seed() -> None:
     _issues.reset()
+
     key = _issues.next_key()
     _issues.put(
         key,
@@ -45,6 +46,31 @@ def _seed() -> None:
             "status": "Ready for Remediation",
             "components": ["frontend"],
             "labels": ["High", "Reflected-Cross-Site-Scripting-XSS"],
+            "comments": [],
+        },
+    )
+
+    key = _issues.next_key()
+    _issues.put(
+        key,
+        {
+            "key": key,
+            "project_key": PROJECT_KEY,
+            "issue_type": "Vulnerability",
+            "summary": (
+                "[Critical] Security Group Allows Unrestricted SSH Access in infra-config: "
+                "backend security group"
+            ),
+            "description": (
+                "The security group defined in infra/security_group.tf allows inbound TCP port "
+                "22 (SSH) from 0.0.0.0/0, exposing the backend host to SSH access attempts from "
+                "anywhere on the internet.\n\n"
+                "Remediation guidance: Restrict SSH ingress to a known CIDR range (VPN/bastion), "
+                "or remove direct SSH access entirely in favor of SSM Session Manager."
+            ),
+            "status": "Ready for Remediation",
+            "components": ["infra-config"],
+            "labels": ["Critical", "Security-Group-Allows-Unrestricted-SSH-Access"],
             "comments": [],
         },
     )
