@@ -136,17 +136,28 @@ class RemediatePipeline:
             title=f"[{issue.key}] {issue.summary}",
             body=self._pr_body(issue, remediation, changed_files),
         )
+        # The PR now exists, so this run has already succeeded — record that before
+        # doing anything else. A failure in the comment or notification steps below
+        # must not overwrite status back to "failed": that would make the next run
+        # think no PR exists yet and collide with the one that's already open.
         self._runs.upsert_run(issue.key, status="pr_open", pr_url=pr.url, pr_number=pr.number)
-        self._jira.add_comment(issue.key, f"Automated remediation PR opened: {pr.url}")
 
-        self._notifier.notify(
-            NotificationMessage(
-                title=f"Remediation PR opened for {issue.key}",
-                body=f"{issue.summary}\n\nChanged files: {', '.join(changed_files)}",
-                pr_url=pr.url,
-                jira_key=issue.key,
+        try:
+            self._jira.add_comment(issue.key, f"Automated remediation PR opened: {pr.url}")
+        except Exception:
+            logger.exception("Failed to comment on %s (PR %s was still opened)", issue.key, pr.url)
+
+        try:
+            self._notifier.notify(
+                NotificationMessage(
+                    title=f"Remediation PR opened for {issue.key}",
+                    body=f"{issue.summary}\n\nChanged files: {', '.join(changed_files)}",
+                    pr_url=pr.url,
+                    jira_key=issue.key,
+                )
             )
-        )
+        except Exception:
+            logger.exception("Failed to notify for %s (PR %s was still opened)", issue.key, pr.url)
 
     def _apply_edits(self, repo_path: Path, edits: list[FileEdit]) -> list[str]:
         repo_root = repo_path.resolve()

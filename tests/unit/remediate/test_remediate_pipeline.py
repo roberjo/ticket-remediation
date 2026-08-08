@@ -26,8 +26,9 @@ def _issue(key: str = "AVREM-1", status: str = "Ready for Remediation") -> JiraI
 
 
 class FakeJiraClient:
-    def __init__(self, issues: list[JiraIssue]):
+    def __init__(self, issues: list[JiraIssue], fail_comment: bool = False):
         self._issues = issues
+        self._fail_comment = fail_comment
         self.comments: list[tuple[str, str]] = []
 
     def create_issue(self, payload):
@@ -37,6 +38,8 @@ class FakeJiraClient:
         return self._issues
 
     def add_comment(self, key: str, body: str) -> None:
+        if self._fail_comment:
+            raise RuntimeError("Jira is down")
         self.comments.append((key, body))
 
     def transition_issue(self, key: str, transition_name: str) -> None:
@@ -162,3 +165,30 @@ def test_remediate_pipeline_skips_already_delivered_issue(
     assert result.skipped == 1
     assert result.opened_prs == []
     assert github.prs_opened == []
+
+
+def test_pr_stays_recorded_as_open_even_if_the_jira_comment_fails(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    """Regression test: a failure in add_comment used to propagate up to the pipeline's
+    outer except and overwrite status="pr_open" with status="failed", even though a real
+    PR was already created — causing the next run to retry and collide with GitHub's
+    "a pull request already exists for this branch" error. The comment step must fail
+    without undoing the pr_open state."""
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()], fail_comment=True)
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert result.opened_prs == ["AVREM-1"]
+    assert result.failed == []
+    assert len(github.prs_opened) == 1
+    run = runs.get_run("AVREM-1")
+    assert run["status"] == "pr_open"
+    assert runs.is_already_delivered("AVREM-1")
