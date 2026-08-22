@@ -21,8 +21,10 @@
   give the LLM real flaws to fix; its patterns (public S3 bucket, wildcard IAM policy,
   `dangerouslySetInnerHTML`, etc.) are documented in its own README specifically as anti-patterns,
   not reference implementations, and its Terraform is never `apply`'d — only read and edited.
-- **No dependency-vulnerability scanning is configured yet** (Dependabot, `pip-audit`, or
-  equivalent) — see [Risks](#risks--known-limitations).
+- **Dependency-vulnerability scanning is configured**: `pip-audit` (run locally against the synced
+  environment, see the README's Testing section) and GitHub Dependabot
+  (`.github/dependabot.yml`, weekly `uv`-ecosystem version-update PRs). Neither is enforced by a
+  CI gate — see [Risks](#risks--known-limitations).
 
 ## Testing strategy
 
@@ -82,7 +84,7 @@ omitted:
 | **Single-writer SQLite** doesn't support multiple concurrent pipeline instances against the same `data/state.db` | v1 has one scheduled instance of each pipeline; horizontal scaling was never a goal |
 | **No PR-merge detection** — `remediation_runs.status` never reaches `pr_merged` in practice | The state model reserves the value, but nothing polls GitHub or receives a webhook to set it; a merged PR is simply left `pr_open` forever, which is harmless (still correctly treated as "already delivered") but not fully accurate |
 | **No retry/backoff framework** | A failed run is retried wholesale on the next cron tick; there's no exponential backoff or max-attempt cap, so a persistently-broken route (e.g. a missing repo-routing rule) will fail identically on every tick until fixed |
-| **No dependency-vulnerability scanning** on this project's own dependencies | Not yet configured; worth adding (Dependabot / `pip-audit`) before running against production systems |
+| **Dependency-vulnerability scanning is not CI-enforced** — `pip-audit` and Dependabot are configured (see [Security](#security)), but there's no CI to run `pip-audit` on every push or auto-merge/require review of Dependabot PRs | No CI exists yet (see [Testing strategy](#testing-strategy)); a human has to run `pip-audit` locally and review each Dependabot PR |
 | **No webhook trigger** | Findings/issues are only picked up on the next poll, not instantly — an explicit trade for zero-infrastructure local development (ADR-2) |
 | **No human-approval gate on LLM output** | Explicit product decision, not an oversight — PR review is the gate (ADR-10) |
 | **No multi-tenant configuration** | One `.env`, one set of routing rules, per deployment |

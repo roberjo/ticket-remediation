@@ -1,0 +1,9 @@
+version: 2
+
+updates:
+  - package-ecosystem: "uv" # if GitHub rejects/doesn't recognize "uv" at merge time, fall back to
+    # "pip" — it reads [project.dependencies] but won't honor [dependency-groups] or the exact
+    # uv.lock resolution (this repo is uv-only per ADR-9, docs/architecture/02-solution-strategy.md)
+    directory: "/"
+    schedule:
+      interval: "weekly"

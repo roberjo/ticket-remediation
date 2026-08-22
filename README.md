@@ -161,6 +161,10 @@ uv run pytest              # fast, no network — Protocol fakes + respx-mocked 
 uv run pytest -m contract  # spins up mock servers in-process, hits them over real HTTP
 uv run ruff check .
 uv run mypy src
+uv run pip-audit           # scans the synced environment for known CVEs via the OSV/PyPI
+                            # advisory DB; run after `uv sync --extra mocks --group dev` so dev/mock
+                            # deps are covered too, not just core — needs outbound network access
+                            # (unlike ruff/mypy, which run fully offline)
 ```
 
 CI is not yet configured for this repo — running the above locally before pushing is currently
@@ -180,8 +184,10 @@ the only gate.
 - The sample target app under `scaffold/vulnerable-react-demo-app/` contains **intentional**
   vulnerabilities for demo purposes only — see that repo's own README before treating any of its
   patterns as something to copy into real code.
-- This project has no automated dependency-vulnerability scanning configured yet (e.g. Dependabot,
-  `pip-audit`); consider adding one before running against production systems.
+- Dependency-vulnerability scanning is in place via `pip-audit` (local, see
+  [Testing](#testing)) and GitHub Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml),
+  automated version-update PRs). Neither is wired into a CI gate (there isn't one yet — see
+  above), so both remain contributor-run / human-reviewed rather than enforced.
 
 ## Roadmap / out of scope for now
 
