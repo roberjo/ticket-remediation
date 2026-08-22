@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     jira_project_key: str = "AVREM"
     jira_remediation_jql_status: str = "Ready for Remediation"
 
+    # Remediate pipeline safety caps
+    remediate_max_retries: int = 5
+    remediate_max_llm_calls_per_run: int | None = None
+
     # GitHub
     github_token: str = ""
 

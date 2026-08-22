@@ -29,3 +29,56 @@ def test_remediation_run_repository_tracks_status_progression(db_conn):
     assert run["repo_full_name"] == "org/repo"  # preserved via COALESCE, not overwritten with NULL
     assert run["pr_url"] == "https://example.com/pr/1"
     assert runs.is_already_delivered("AVREM-1")
+
+
+def test_failure_count_increments_on_repeated_failures_and_resets_on_success(db_conn):
+    runs = RemediationRunRepository(db_conn)
+
+    runs.upsert_run("AVREM-1", status="failed", error_message="boom")
+    assert runs.get_run("AVREM-1")["failure_count"] == 1
+
+    runs.upsert_run("AVREM-1", status="failed", error_message="boom again")
+    assert runs.get_run("AVREM-1")["failure_count"] == 2
+
+    runs.upsert_run("AVREM-1", status="branch_created", repo_full_name="org/repo", branch_name="b")
+    assert runs.get_run("AVREM-1")["failure_count"] == 0
+
+
+def test_is_permanently_failed_at_the_threshold_boundary(db_conn):
+    runs = RemediationRunRepository(db_conn)
+    assert not runs.is_permanently_failed("AVREM-1", max_failures=3)
+
+    runs.upsert_run("AVREM-1", status="failed", error_message="boom")
+    runs.upsert_run("AVREM-1", status="failed", error_message="boom")
+    assert not runs.is_permanently_failed("AVREM-1", max_failures=3)
+
+    runs.upsert_run("AVREM-1", status="failed", error_message="boom")
+    assert runs.is_permanently_failed("AVREM-1", max_failures=3)
+
+
+def test_mark_ignored_sets_status_and_reason(db_conn):
+    runs = RemediationRunRepository(db_conn)
+    runs.mark_ignored("AVREM-1", reason="known false positive")
+
+    run = runs.get_run("AVREM-1")
+    assert run["status"] == "ignored"
+    assert run["error_message"] == "known false positive"
+
+
+def test_should_skip_covers_delivered_ignored_and_permanently_failed(db_conn):
+    runs = RemediationRunRepository(db_conn)
+
+    assert not runs.should_skip("AVREM-1", max_retries=3)
+
+    runs.upsert_run("AVREM-1", status="pr_open", pr_url="https://example.com/pr/1", pr_number=1)
+    assert runs.should_skip("AVREM-1", max_retries=3)
+
+    runs.mark_ignored("AVREM-2")
+    assert runs.should_skip("AVREM-2", max_retries=3)
+
+    for _ in range(3):
+        runs.upsert_run("AVREM-3", status="failed", error_message="boom")
+    assert runs.should_skip("AVREM-3", max_retries=3)
+
+    runs.upsert_run("AVREM-4", status="failed", error_message="boom")
+    assert not runs.should_skip("AVREM-4", max_retries=3)

@@ -38,8 +38,19 @@ def _branch_name(jira_key: str, summary: str) -> str:
 class RemediateResult:
     opened_prs: list[str] = field(default_factory=list)
     skipped: int = 0
+    blocked: list[str] = field(default_factory=list)
+    deferred: int = 0
     failed: list[str] = field(default_factory=list)
     batch_error: str | None = None
+
+
+class RemediationStageError(Exception):
+    """Wraps an exception raised by a named step inside _remediate_one, so the outer
+    per-issue handler in run() knows which stage a failure happened in."""
+
+    def __init__(self, stage: str, original: Exception):
+        super().__init__(str(original))
+        self.stage = stage
 
 
 class RemediatePipeline:
@@ -54,6 +65,8 @@ class RemediatePipeline:
         github_token: str,
         jira_base_url: str,
         work_dir: Path,
+        max_retries: int = 5,
+        max_llm_calls: int | None = None,
     ):
         self._jira = jira_client
         self._github = github_client
@@ -64,6 +77,8 @@ class RemediatePipeline:
         self._github_token = github_token
         self._jira_base_url = jira_base_url.rstrip("/")
         self._work_dir = work_dir
+        self._max_retries = max_retries
+        self._max_llm_calls = max_llm_calls
 
     def run(self, jql_status: str, project_key: str, dry_run: bool = False) -> RemediateResult:
         result = RemediateResult()
@@ -75,9 +90,13 @@ class RemediatePipeline:
             result.batch_error = str(exc)
             return result
 
+        llm_calls_made = 0
         for issue in issues:
             if self._runs.is_already_delivered(issue.key):
                 result.skipped += 1
+                continue
+            if self._runs.should_skip(issue.key, self._max_retries):
+                result.blocked.append(issue.key)
                 continue
 
             repo_target = select_repo(issue, self._routing)
@@ -91,9 +110,18 @@ class RemediatePipeline:
                 result.failed.append(issue.key)
                 continue
 
+            if self._max_llm_calls is not None and llm_calls_made >= self._max_llm_calls:
+                result.deferred += 1
+                continue
+            llm_calls_made += 1
+
             try:
                 self._remediate_one(issue, repo_target, dry_run)
                 result.opened_prs.append(issue.key)
+            except RemediationStageError as exc:
+                logger.exception("Remediation failed for %s at stage=%s", issue.key, exc.stage)
+                self._runs.upsert_run(issue.key, status="failed", error_message=str(exc), stage=exc.stage)
+                result.failed.append(issue.key)
             except Exception as exc:
                 logger.exception("Remediation failed for %s", issue.key)
                 self._runs.upsert_run(issue.key, status="failed", error_message=str(exc))
@@ -102,19 +130,24 @@ class RemediatePipeline:
         return result
 
     def _remediate_one(self, issue: JiraIssue, repo_target: RepoRouteTarget, dry_run: bool) -> None:
-        default_branch = repo_target.default_branch or self._github.get_default_branch(repo_target.full_name)
-        repo_path = git_ops.clone_or_update(
-            repo_target.full_name, self._github_token, default_branch, self._work_dir
-        )
+        try:
+            default_branch = repo_target.default_branch or self._github.get_default_branch(
+                repo_target.full_name
+            )
+            repo_path = git_ops.clone_or_update(
+                repo_target.full_name, self._github_token, default_branch, self._work_dir
+            )
 
-        branch = _branch_name(issue.key, issue.summary)
-        git_ops.create_branch(repo_path, branch, default_branch)
-        self._runs.upsert_run(
-            issue.key,
-            status="branch_created",
-            repo_full_name=repo_target.full_name,
-            branch_name=branch,
-        )
+            branch = _branch_name(issue.key, issue.summary)
+            git_ops.create_branch(repo_path, branch, default_branch)
+            self._runs.upsert_run(
+                issue.key,
+                status="branch_created",
+                repo_full_name=repo_target.full_name,
+                branch_name=branch,
+            )
+        except Exception as exc:
+            raise RemediationStageError("clone_branch", exc) from exc
 
         file_tree = build_file_tree(repo_path)
         file_reader = make_file_reader(repo_path)
@@ -124,27 +157,39 @@ class RemediatePipeline:
             description=issue.description,
             file_tree=file_tree,
         )
-        remediation = self._llm.generate_remediation(request, file_reader)
+        try:
+            remediation = self._llm.generate_remediation(request, file_reader)
+        except Exception as exc:
+            raise RemediationStageError("llm_generate", exc) from exc
 
-        changed_files = self._apply_edits(repo_path, remediation.edits)
+        try:
+            changed_files = self._apply_edits(repo_path, remediation.edits)
+        except Exception as exc:
+            raise RemediationStageError("apply_edits", exc) from exc
 
         if dry_run:
             logger.info("[dry-run] %s would change: %s", issue.key, changed_files)
             return
 
-        commit_message = (
-            f"{issue.key}: {remediation.commit_message}\n\nJira: {self._jira_base_url}/browse/{issue.key}"
-        )
-        git_ops.commit_all(repo_path, commit_message)
-        git_ops.push_branch(repo_path, branch)
+        try:
+            commit_message = (
+                f"{issue.key}: {remediation.commit_message}\n\nJira: {self._jira_base_url}/browse/{issue.key}"
+            )
+            git_ops.commit_all(repo_path, commit_message)
+            git_ops.push_branch(repo_path, branch)
+        except Exception as exc:
+            raise RemediationStageError("commit_push", exc) from exc
 
-        pr = self._github.create_pull_request(
-            repo_target.full_name,
-            head=branch,
-            base=default_branch,
-            title=f"[{issue.key}] {issue.summary}",
-            body=self._pr_body(issue, remediation, changed_files),
-        )
+        try:
+            pr = self._github.create_pull_request(
+                repo_target.full_name,
+                head=branch,
+                base=default_branch,
+                title=f"[{issue.key}] {issue.summary}",
+                body=self._pr_body(issue, remediation, changed_files),
+            )
+        except Exception as exc:
+            raise RemediationStageError("pr_create", exc) from exc
         # The PR now exists, so this run has already succeeded — record that before
         # doing anything else. A failure in the comment or notification steps below
         # must not overwrite status back to "failed": that would make the next run

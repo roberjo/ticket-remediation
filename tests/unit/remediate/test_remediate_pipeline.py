@@ -85,6 +85,24 @@ class TooManyEditsLLMProvider:
         )
 
 
+class CountingLLMProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def generate_remediation(self, request: RemediationRequest, file_reader) -> RemediationResponse:
+        self.calls += 1
+        return RemediationResponse(
+            summary="Escape the query param before rendering",
+            commit_message="Fix reflected XSS in search results",
+            edits=[FileEdit(path="src/app.js", action="modify", content="console.log('fixed');\n")],
+        )
+
+
+class FailingLLMProvider:
+    def generate_remediation(self, request: RemediationRequest, file_reader) -> RemediationResponse:
+        raise RuntimeError("LLM provider is down")
+
+
 class FakeNotifier:
     def __init__(self):
         self.messages: list[NotificationMessage] = []
@@ -127,7 +145,17 @@ def routing() -> RepoRoutingConfig:
     )
 
 
-def _pipeline(jira, github, llm, notifier, routing, runs, work_dir) -> RemediatePipeline:
+def _pipeline(
+    jira,
+    github,
+    llm,
+    notifier,
+    routing,
+    runs,
+    work_dir,
+    max_retries: int = 5,
+    max_llm_calls: int | None = None,
+) -> RemediatePipeline:
     return RemediatePipeline(
         jira_client=jira,
         github_client=github,
@@ -138,6 +166,8 @@ def _pipeline(jira, github, llm, notifier, routing, runs, work_dir) -> Remediate
         github_token="fake-token",
         jira_base_url="https://example.atlassian.net",
         work_dir=work_dir,
+        max_retries=max_retries,
+        max_llm_calls=max_llm_calls,
     )
 
 
@@ -246,3 +276,96 @@ def test_remediate_pipeline_fails_and_writes_nothing_when_llm_returns_too_many_e
     assert github.prs_opened == []
     assert not (local_repo / "src" / "file0.js").exists()
     assert (local_repo / "src" / "app.js").read_text() == "console.log('hi');\n"
+
+
+def test_permanently_failed_ticket_is_blocked_without_calling_llm_or_github(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    llm = CountingLLMProvider()
+    runs = RemediationRunRepository(db_conn)
+    for _ in range(2):
+        runs.upsert_run("AVREM-1", status="failed", error_message="boom")
+
+    result = _pipeline(jira, github, llm, FakeNotifier(), routing, runs, tmp_path, max_retries=2).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert result.blocked == ["AVREM-1"]
+    assert result.opened_prs == []
+    assert result.failed == []
+    assert llm.calls == 0
+    assert github.prs_opened == []
+
+
+def test_ignored_ticket_is_blocked_without_calling_llm_or_github(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    llm = CountingLLMProvider()
+    runs = RemediationRunRepository(db_conn)
+    runs.mark_ignored("AVREM-1", reason="known false positive")
+
+    result = _pipeline(jira, github, llm, FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert result.blocked == ["AVREM-1"]
+    assert result.opened_prs == []
+    assert result.failed == []
+    assert llm.calls == 0
+    assert github.prs_opened == []
+
+
+def test_max_llm_calls_caps_processing_and_defers_the_rest(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    issues = [_issue(key=f"AVREM-{i}") for i in range(1, 4)]
+    jira = FakeJiraClient(issues)
+    github = FakeGitHubClient()
+    llm = CountingLLMProvider()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(jira, github, llm, FakeNotifier(), routing, runs, tmp_path, max_llm_calls=1).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert len(result.opened_prs) == 1
+    assert result.deferred == 2
+    assert llm.calls == 1
+
+    processed_key = result.opened_prs[0]
+    for issue in issues:
+        if issue.key != processed_key:
+            assert runs.get_run(issue.key) is None
+
+
+def test_failure_at_a_specific_stage_is_recorded_on_the_run(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(jira, github, FailingLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert result.failed == ["AVREM-1"]
+    run = runs.get_run("AVREM-1")
+    assert run["stage"] == "llm_generate"
+    assert "LLM provider is down" in run["error_message"]

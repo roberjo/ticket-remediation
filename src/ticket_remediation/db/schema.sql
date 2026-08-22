@@ -9,11 +9,13 @@ CREATE TABLE IF NOT EXISTS snow_jira_links (
 
 CREATE TABLE IF NOT EXISTS remediation_runs (
     jira_key        TEXT PRIMARY KEY,
-    status           TEXT NOT NULL,   -- branch_created | pr_open | pr_merged | failed
+    status           TEXT NOT NULL,   -- branch_created | pr_open | pr_merged | failed | ignored
     repo_full_name   TEXT,
     branch_name      TEXT,
     pr_url           TEXT,
     pr_number        INTEGER,
     last_attempt_at  TEXT NOT NULL,
-    error_message    TEXT
+    error_message    TEXT,
+    failure_count    INTEGER NOT NULL DEFAULT 0,
+    stage            TEXT
 );

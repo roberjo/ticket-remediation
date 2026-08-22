@@ -45,13 +45,14 @@ class RemediationRunRepository:
         pr_url: str | None = None,
         pr_number: int | None = None,
         error_message: str | None = None,
+        stage: str | None = None,
     ) -> None:
         self._conn.execute(
             """
             INSERT INTO remediation_runs
                 (jira_key, status, repo_full_name, branch_name, pr_url, pr_number,
-                 last_attempt_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 last_attempt_at, error_message, failure_count, stage)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (jira_key) DO UPDATE SET
                 status = excluded.status,
                 repo_full_name = COALESCE(excluded.repo_full_name, remediation_runs.repo_full_name),
@@ -59,7 +60,12 @@ class RemediationRunRepository:
                 pr_url = COALESCE(excluded.pr_url, remediation_runs.pr_url),
                 pr_number = COALESCE(excluded.pr_number, remediation_runs.pr_number),
                 last_attempt_at = excluded.last_attempt_at,
-                error_message = excluded.error_message
+                error_message = excluded.error_message,
+                failure_count = CASE
+                    WHEN excluded.status = 'failed' THEN remediation_runs.failure_count + 1
+                    ELSE 0
+                END,
+                stage = excluded.stage
             """,
             (
                 jira_key,
@@ -70,6 +76,8 @@ class RemediationRunRepository:
                 pr_number,
                 _now(),
                 error_message,
+                1 if status == "failed" else 0,
+                stage,
             ),
         )
         self._conn.commit()
@@ -77,3 +85,18 @@ class RemediationRunRepository:
     def is_already_delivered(self, jira_key: str) -> bool:
         run = self.get_run(jira_key)
         return run is not None and run["status"] in ("pr_open", "pr_merged")
+
+    def is_permanently_failed(self, jira_key: str, max_failures: int) -> bool:
+        run = self.get_run(jira_key)
+        return run is not None and run["status"] == "failed" and run["failure_count"] >= max_failures
+
+    def mark_ignored(self, jira_key: str, reason: str | None = None) -> None:
+        self.upsert_run(jira_key, status="ignored", error_message=reason)
+
+    def should_skip(self, jira_key: str, max_retries: int) -> bool:
+        if self.is_already_delivered(jira_key):
+            return True
+        run = self.get_run(jira_key)
+        if run is not None and run["status"] == "ignored":
+            return True
+        return self.is_permanently_failed(jira_key, max_retries)

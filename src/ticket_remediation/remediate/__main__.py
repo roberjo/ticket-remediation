@@ -51,6 +51,8 @@ def run(
         github_token=settings.github_token,
         jira_base_url=settings.jira_base_url,
         work_dir=settings.work_dir,
+        max_retries=settings.remediate_max_retries,
+        max_llm_calls=settings.remediate_max_llm_calls_per_run,
     )
 
     lock_path = settings.sqlite_db_path.parent / "remediate.lock"
@@ -66,9 +68,11 @@ def run(
         raise typer.Exit(0) from None
 
     logger.info(
-        "Remediate complete: opened=%d skipped=%d failed=%d",
+        "Remediate complete: opened=%d skipped=%d blocked=%d deferred=%d failed=%d",
         len(result.opened_prs),
         result.skipped,
+        len(result.blocked),
+        result.deferred,
         len(result.failed),
     )
     if result.batch_error:
