@@ -59,5 +59,26 @@ def run(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def status() -> None:
+    """List recorded ServiceNow <-> Jira ticket links."""
+    settings = Settings()
+    conn = get_connection(settings.sqlite_db_path)
+    links = LinkRepository(conn)
+    rows = links.list_links()
+
+    if not rows:
+        typer.echo("No ServiceNow<->Jira links recorded.")
+        return
+
+    header = f"{'SNOW_NUMBER':<15} {'SNOW_TABLE':<24} {'JIRA_KEY':<12} {'CREATED_AT'}"
+    typer.echo(header)
+    for row in rows:
+        typer.echo(
+            f"{(row['snow_number'] or '-'):<15} {row['snow_table']:<24} "
+            f"{row['jira_key']:<12} {row['created_at']}"
+        )
+
+
 if __name__ == "__main__":
     app()

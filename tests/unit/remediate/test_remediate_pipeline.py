@@ -31,11 +31,13 @@ class FakeJiraClient:
         self._fail_comment = fail_comment
         self._fail_search = fail_search
         self.comments: list[tuple[str, str]] = []
+        self.last_jql: str | None = None
 
     def create_issue(self, payload):
         raise NotImplementedError
 
     def search_issues(self, jql: str) -> list[JiraIssue]:
+        self.last_jql = jql
         if self._fail_search:
             raise RuntimeError("Jira search is down")
         return self._issues
@@ -400,3 +402,40 @@ def test_remediate_pipeline_sends_one_failure_notification_for_multiple_failed_t
     assert notifier.messages[0].level == "failure"
     assert "AVREM-1" in notifier.messages[0].body
     assert "AVREM-2" in notifier.messages[0].body
+
+
+def test_ticket_key_narrows_the_jql_instead_of_using_the_status_filter(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM", ticket_key="AVREM-1"
+    )
+
+    assert jira.last_jql == 'key = "AVREM-1"'
+    assert result.opened_prs == ["AVREM-1"]
+
+
+def test_bypass_skip_for_only_bypasses_the_named_ticket(monkeypatch, local_repo, routing, db_conn, tmp_path):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    issues = [_issue(key="AVREM-1"), _issue(key="AVREM-2")]
+    jira = FakeJiraClient(issues)
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+    runs.mark_ignored("AVREM-1")
+    runs.mark_ignored("AVREM-2")
+
+    result = _pipeline(jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM", bypass_skip_for="AVREM-1"
+    )
+
+    assert result.opened_prs == ["AVREM-1"]
+    assert result.blocked == ["AVREM-2"]

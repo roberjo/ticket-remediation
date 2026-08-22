@@ -80,9 +80,22 @@ class RemediatePipeline:
         self._max_retries = max_retries
         self._max_llm_calls = max_llm_calls
 
-    def run(self, jql_status: str, project_key: str, dry_run: bool = False) -> RemediateResult:
+    def run(
+        self,
+        jql_status: str,
+        project_key: str,
+        dry_run: bool = False,
+        ticket_key: str | None = None,
+        bypass_skip_for: str | None = None,
+    ) -> RemediateResult:
+        """bypass_skip_for, when set, must equal ticket_key: it lets an operator force-retry
+        one explicitly named ticket (via `remediate run --ticket X --force`) without weakening
+        the skip gate for anything else in the batch."""
         result = RemediateResult()
-        jql = f'project = {project_key} AND status = "{jql_status}"'
+        if ticket_key:
+            jql = f'key = "{ticket_key}"'
+        else:
+            jql = f'project = {project_key} AND status = "{jql_status}"'
         try:
             issues = self._jira.search_issues(jql)
         except Exception as exc:
@@ -96,12 +109,14 @@ class RemediatePipeline:
 
         llm_calls_made = 0
         for issue in issues:
-            if self._runs.is_already_delivered(issue.key):
-                result.skipped += 1
-                continue
-            if self._runs.should_skip(issue.key, self._max_retries):
-                result.blocked.append(issue.key)
-                continue
+            bypass_skip = bypass_skip_for is not None and issue.key == bypass_skip_for
+            if not bypass_skip:
+                if self._runs.is_already_delivered(issue.key):
+                    result.skipped += 1
+                    continue
+                if self._runs.should_skip(issue.key, self._max_retries):
+                    result.blocked.append(issue.key)
+                    continue
 
             repo_target = select_repo(issue, self._routing)
             if repo_target is None:

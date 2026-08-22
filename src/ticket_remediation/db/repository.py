@@ -28,6 +28,9 @@ class LinkRepository:
         )
         self._conn.commit()
 
+    def list_links(self) -> list[sqlite3.Row]:
+        return self._conn.execute("SELECT * FROM snow_jira_links ORDER BY created_at DESC").fetchall()
+
 
 class RemediationRunRepository:
     def __init__(self, conn: sqlite3.Connection):
@@ -35,6 +38,16 @@ class RemediationRunRepository:
 
     def get_run(self, jira_key: str) -> sqlite3.Row | None:
         return self._conn.execute("SELECT * FROM remediation_runs WHERE jira_key = ?", (jira_key,)).fetchone()
+
+    def list_runs(self, status: str | None = None) -> list[sqlite3.Row]:
+        if status is not None:
+            return self._conn.execute(
+                "SELECT * FROM remediation_runs WHERE status = ? ORDER BY last_attempt_at DESC",
+                (status,),
+            ).fetchall()
+        return self._conn.execute(
+            "SELECT * FROM remediation_runs ORDER BY last_attempt_at DESC"
+        ).fetchall()
 
     def upsert_run(
         self,
