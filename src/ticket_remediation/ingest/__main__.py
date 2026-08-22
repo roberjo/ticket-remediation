@@ -27,8 +27,11 @@ def main() -> None:
 def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Log what would be created without calling Jira"),
 ) -> None:
-    configure_logging()
     settings = Settings()
+    configure_logging(
+        level=getattr(logging, settings.log_level.upper()),
+        json_output=settings.log_format == "json",
+    )
     mapping = load_ingest_mapping(settings.ingest_mapping_path)
 
     snow = ServiceNowRestClient(settings.snow_instance_url, settings.snow_api_token)

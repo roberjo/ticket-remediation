@@ -30,8 +30,11 @@ def run(
         False, "--dry-run", help="Generate and write the fix locally but skip commit/push/PR/notify"
     ),
 ) -> None:
-    configure_logging()
     settings = Settings()
+    configure_logging(
+        level=getattr(logging, settings.log_level.upper()),
+        json_output=settings.log_format == "json",
+    )
     routing = load_repo_routing(settings.repo_routing_path)
 
     jira = JiraRestClient(settings.jira_base_url, settings.jira_email, settings.jira_api_token)
