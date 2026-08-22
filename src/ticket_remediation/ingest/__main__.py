@@ -5,6 +5,7 @@ import typer
 from ticket_remediation.config.mapping import load_ingest_mapping
 from ticket_remediation.config.settings import Settings
 from ticket_remediation.connectors.jira.rest import JiraRestClient
+from ticket_remediation.connectors.notify.composite import build_notifier
 from ticket_remediation.connectors.servicenow.rest import ServiceNowRestClient
 from ticket_remediation.db.connection import get_connection
 from ticket_remediation.db.repository import LinkRepository
@@ -32,13 +33,14 @@ def run(
 
     snow = ServiceNowRestClient(settings.snow_instance_url, settings.snow_api_token)
     jira = JiraRestClient(settings.jira_base_url, settings.jira_email, settings.jira_api_token)
+    notifier = build_notifier(settings)
     conn = get_connection(settings.sqlite_db_path)
     links = LinkRepository(conn)
 
     lock_path = settings.sqlite_db_path.parent / "ingest.lock"
     try:
         with pipeline_lock(lock_path):
-            result = IngestPipeline(snow, jira, mapping, links).run(dry_run=dry_run)
+            result = IngestPipeline(snow, jira, mapping, links, notifier).run(dry_run=dry_run)
     except LockHeldError:
         logger.info("Another ingest run is already in progress, skipping this tick")
         raise typer.Exit(0) from None

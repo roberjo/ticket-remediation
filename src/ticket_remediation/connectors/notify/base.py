@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -6,8 +6,9 @@ from pydantic import BaseModel
 class NotificationMessage(BaseModel):
     title: str
     body: str
-    pr_url: str
-    jira_key: str
+    pr_url: str | None = None
+    jira_key: str | None = None
+    level: Literal["success", "failure"] = "success"
 
 
 class Notifier(Protocol):

@@ -20,6 +20,14 @@ def _message() -> NotificationMessage:
     )
 
 
+def _failure_message() -> NotificationMessage:
+    return NotificationMessage(
+        title="Remediate batch failed",
+        body="Failed to search Jira issues with jql=...: boom",
+        level="failure",
+    )
+
+
 @respx.mock
 def test_teams_notifier_posts_message_card():
     route = respx.post("https://teams.example.com/webhook").mock(return_value=httpx.Response(200))
@@ -32,6 +40,16 @@ def test_teams_notifier_posts_message_card():
 
 
 @respx.mock
+def test_teams_notifier_failure_message_omits_pr_link_and_none():
+    route = respx.post("https://teams.example.com/webhook").mock(return_value=httpx.Response(200))
+
+    TeamsNotifier("https://teams.example.com/webhook").notify(_failure_message())
+
+    body = json.loads(route.calls[0].request.content)
+    assert "None" not in json.dumps(body)
+
+
+@respx.mock
 def test_slack_notifier_posts_text_payload():
     route = respx.post("https://hooks.slack.com/services/x").mock(return_value=httpx.Response(200))
 
@@ -40,6 +58,16 @@ def test_slack_notifier_posts_text_payload():
     body = json.loads(route.calls[0].request.content)
     assert "Remediation PR opened for AVREM-1" in body["text"]
     assert "https://github.com/org/repo/pull/1" in body["text"]
+
+
+@respx.mock
+def test_slack_notifier_failure_message_omits_pr_link_and_none():
+    route = respx.post("https://hooks.slack.com/services/x").mock(return_value=httpx.Response(200))
+
+    SlackNotifier("https://hooks.slack.com/services/x").notify(_failure_message())
+
+    body = json.loads(route.calls[0].request.content)
+    assert "None" not in json.dumps(body)
 
 
 @patch("ticket_remediation.connectors.notify.email_notifier.smtplib.SMTP")
@@ -61,6 +89,24 @@ def test_email_notifier_sends_expected_message(mock_smtp_cls):
     sent_msg = mock_smtp.send_message.call_args.args[0]
     assert sent_msg["To"] == "team@example.com"
     assert sent_msg["Subject"] == "Remediation PR opened for AVREM-1"
+
+
+@patch("ticket_remediation.connectors.notify.email_notifier.smtplib.SMTP")
+def test_email_notifier_failure_message_omits_pr_line_and_none(mock_smtp_cls):
+    mock_smtp = MagicMock()
+    mock_smtp_cls.return_value.__enter__.return_value = mock_smtp
+
+    EmailNotifier(
+        smtp_host="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_password="pass",
+        from_addr="bot@example.com",
+        to_addr="team@example.com",
+    ).notify(_failure_message())
+
+    sent_msg = mock_smtp.send_message.call_args.args[0]
+    assert "None" not in sent_msg.get_content()
 
 
 def test_composite_notifier_continues_after_one_channel_fails():

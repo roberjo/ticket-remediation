@@ -88,6 +88,10 @@ class RemediatePipeline:
         except Exception as exc:
             logger.exception("Failed to search Jira issues with jql=%s", jql)
             result.batch_error = str(exc)
+            self._notify_failure(
+                title="Remediate batch failed",
+                body=f"Failed to search Jira issues with jql={jql}: {exc}",
+            )
             return result
 
         llm_calls_made = 0
@@ -127,7 +131,19 @@ class RemediatePipeline:
                 self._runs.upsert_run(issue.key, status="failed", error_message=str(exc))
                 result.failed.append(issue.key)
 
+        if result.failed:
+            self._notify_failure(
+                title="Remediate run had failed tickets",
+                body=f"{len(result.failed)} ticket(s) failed remediation: {', '.join(result.failed)}",
+            )
+
         return result
+
+    def _notify_failure(self, title: str, body: str) -> None:
+        try:
+            self._notifier.notify(NotificationMessage(title=title, body=body, level="failure"))
+        except Exception:
+            logger.exception("Failed to send failure notification: %s", title)
 
     def _remediate_one(self, issue: JiraIssue, repo_target: RepoRouteTarget, dry_run: bool) -> None:
         try:

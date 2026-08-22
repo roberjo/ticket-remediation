@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from ticket_remediation.config.mapping import IngestMappingConfig
 from ticket_remediation.connectors.jira.base import JiraClient
+from ticket_remediation.connectors.notify.base import NotificationMessage, Notifier
 from ticket_remediation.connectors.servicenow.base import ServiceNowClient
 from ticket_remediation.db.repository import LinkRepository
 
@@ -26,11 +27,13 @@ class IngestPipeline:
         jira_client: JiraClient,
         mapping: IngestMappingConfig,
         links: LinkRepository,
+        notifier: Notifier,
     ):
         self._snow = snow_client
         self._jira = jira_client
         self._mapping = mapping
         self._links = links
+        self._notifier = notifier
 
     def run(self, dry_run: bool = False) -> IngestResult:
         result = IngestResult()
@@ -41,6 +44,10 @@ class IngestPipeline:
             except Exception:
                 logger.exception("Failed to fetch tickets from SNOW table %s", rule.snow_table)
                 result.failed_tables.append(rule.snow_table)
+                self._notify_failure(
+                    title="Ingest table fetch failed",
+                    body=f"Failed to fetch tickets from SNOW table {rule.snow_table}",
+                )
                 continue
 
             for ticket in tickets:
@@ -70,4 +77,16 @@ class IngestPipeline:
                 logger.info("Created %s from SNOW ticket %s", ref.key, ticket.number)
                 result.created.append(ref.key)
 
+        if result.failed:
+            self._notify_failure(
+                title="Ingest run had failed tickets",
+                body=f"{len(result.failed)} ticket(s) failed to create in Jira: {', '.join(result.failed)}",
+            )
+
         return result
+
+    def _notify_failure(self, title: str, body: str) -> None:
+        try:
+            self._notifier.notify(NotificationMessage(title=title, body=body, level="failure"))
+        except Exception:
+            logger.exception("Failed to send failure notification: %s", title)

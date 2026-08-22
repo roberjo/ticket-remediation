@@ -9,6 +9,7 @@ class SlackNotifier:
         self._timeout = timeout
 
     def notify(self, message: NotificationMessage) -> None:
-        payload = {"text": f"*{message.title}*\n{message.body}\n<{message.pr_url}|View PR>"}
+        pr_line = f"\n<{message.pr_url}|View PR>" if message.pr_url else ""
+        payload = {"text": f"*{message.title}*\n{message.body}{pr_line}"}
         response = httpx.post(self._webhook_url, json=payload, timeout=self._timeout)
         response.raise_for_status()

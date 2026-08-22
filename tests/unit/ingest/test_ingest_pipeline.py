@@ -2,6 +2,7 @@ from datetime import datetime
 
 from ticket_remediation.config.mapping import IngestMappingConfig
 from ticket_remediation.connectors.jira.base import JiraIssuePayload, JiraIssueRef
+from ticket_remediation.connectors.notify.base import NotificationMessage
 from ticket_remediation.connectors.servicenow.base import SnowTicket
 from ticket_remediation.db.repository import LinkRepository
 from ticket_remediation.ingest.pipeline import IngestPipeline
@@ -66,6 +67,14 @@ class FakeJiraClient:
         raise NotImplementedError
 
 
+class FakeNotifier:
+    def __init__(self):
+        self.messages: list[NotificationMessage] = []
+
+    def notify(self, message: NotificationMessage) -> None:
+        self.messages.append(message)
+
+
 def _rule(snow_table: str = "x_avit_findings", summary_template: str = "{short_description}") -> dict:
     return {
         "snow_table": snow_table,
@@ -90,7 +99,7 @@ def test_ingest_pipeline_creates_one_issue_per_new_ticket(db_conn):
     jira = FakeJiraClient()
     links = LinkRepository(db_conn)
 
-    result = IngestPipeline(snow, jira, _mapping(), links).run()
+    result = IngestPipeline(snow, jira, _mapping(), links, FakeNotifier()).run()
 
     assert result.created == ["AVREM-1", "AVREM-2"]
     assert result.skipped == 0
@@ -103,7 +112,7 @@ def test_ingest_pipeline_is_idempotent_on_second_run(db_conn):
     snow = FakeServiceNowClient(tickets)
     jira = FakeJiraClient()
     links = LinkRepository(db_conn)
-    pipeline = IngestPipeline(snow, jira, _mapping(), links)
+    pipeline = IngestPipeline(snow, jira, _mapping(), links, FakeNotifier())
 
     first = pipeline.run()
     second = pipeline.run()
@@ -122,12 +131,15 @@ def test_ingest_pipeline_one_failure_does_not_block_the_rest(db_conn):
     snow = FakeServiceNowClient(tickets)
     jira = FakeJiraClient(fail_for={"Reflected XSS in /search"})
     links = LinkRepository(db_conn)
+    notifier = FakeNotifier()
 
-    result = IngestPipeline(snow, jira, _mapping(), links).run()
+    result = IngestPipeline(snow, jira, _mapping(), links, notifier).run()
 
     assert result.failed == ["AVIT1"]
     assert result.created == ["AVREM-1"]  # the second ticket still gets created
     assert len(jira.created) == 1
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].level == "failure"
 
 
 def test_ingest_pipeline_one_table_fetch_failure_does_not_block_other_tables(db_conn):
@@ -139,12 +151,15 @@ def test_ingest_pipeline_one_table_fetch_failure_does_not_block_other_tables(db_
     jira = FakeJiraClient()
     links = LinkRepository(db_conn)
     mapping = _mapping(_rule("x_avit_findings"), _rule("x_avit_other"))
+    notifier = FakeNotifier()
 
-    result = IngestPipeline(snow, jira, mapping, links).run()
+    result = IngestPipeline(snow, jira, mapping, links, notifier).run()
 
     assert result.failed_tables == ["x_avit_findings"]
     assert result.created == ["AVREM-1"]
     assert len(jira.created) == 1
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].level == "failure"
 
 
 def test_ingest_pipeline_bad_mapping_for_one_ticket_does_not_block_others(db_conn):
@@ -160,7 +175,7 @@ def test_ingest_pipeline_bad_mapping_for_one_ticket_does_not_block_others(db_con
         _rule("x_avit_good"),
     )
 
-    result = IngestPipeline(snow, jira, mapping, links).run()
+    result = IngestPipeline(snow, jira, mapping, links, FakeNotifier()).run()
 
     assert result.failed == ["AVIT1"]
     assert result.created == ["AVREM-1"]  # the ticket with a working mapping still succeeds

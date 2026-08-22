@@ -9,12 +9,13 @@ class TeamsNotifier:
         self._timeout = timeout
 
     def notify(self, message: NotificationMessage) -> None:
+        pr_line = f"\n\n[View PR]({message.pr_url})" if message.pr_url else ""
         payload = {
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "summary": message.title,
             "title": message.title,
-            "text": f"{message.body}\n\n[View PR]({message.pr_url})",
+            "text": f"{message.body}{pr_line}",
         }
         response = httpx.post(self._webhook_url, json=payload, timeout=self._timeout)
         response.raise_for_status()

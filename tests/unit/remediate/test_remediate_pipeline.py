@@ -246,8 +246,9 @@ def test_remediate_pipeline_records_batch_error_when_search_issues_fails(
     jira = FakeJiraClient([], fail_search=True)
     github = FakeGitHubClient()
     runs = RemediationRunRepository(db_conn)
+    notifier = FakeNotifier()
 
-    result = _pipeline(jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+    result = _pipeline(jira, github, FakeLLMProvider(), notifier, routing, runs, tmp_path).run(
         jql_status="Ready for Remediation", project_key="AVREM"
     )
 
@@ -255,6 +256,9 @@ def test_remediate_pipeline_records_batch_error_when_search_issues_fails(
     assert result.opened_prs == []
     assert result.failed == []
     assert github.prs_opened == []
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].level == "failure"
+    assert notifier.messages[0].pr_url is None
 
 
 def test_remediate_pipeline_fails_and_writes_nothing_when_llm_returns_too_many_edits(
@@ -360,8 +364,9 @@ def test_failure_at_a_specific_stage_is_recorded_on_the_run(
     jira = FakeJiraClient([_issue()])
     github = FakeGitHubClient()
     runs = RemediationRunRepository(db_conn)
+    notifier = FakeNotifier()
 
-    result = _pipeline(jira, github, FailingLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+    result = _pipeline(jira, github, FailingLLMProvider(), notifier, routing, runs, tmp_path).run(
         jql_status="Ready for Remediation", project_key="AVREM"
     )
 
@@ -369,3 +374,29 @@ def test_failure_at_a_specific_stage_is_recorded_on_the_run(
     run = runs.get_run("AVREM-1")
     assert run["stage"] == "llm_generate"
     assert "LLM provider is down" in run["error_message"]
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].level == "failure"
+    assert "AVREM-1" in notifier.messages[0].body
+
+
+def test_remediate_pipeline_sends_one_failure_notification_for_multiple_failed_tickets(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    issues = [_issue(key="AVREM-1"), _issue(key="AVREM-2")]
+    jira = FakeJiraClient(issues)
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+    notifier = FakeNotifier()
+
+    result = _pipeline(
+        jira, github, FailingLLMProvider(), notifier, routing, runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert sorted(result.failed) == ["AVREM-1", "AVREM-2"]
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].level == "failure"
+    assert "AVREM-1" in notifier.messages[0].body
+    assert "AVREM-2" in notifier.messages[0].body

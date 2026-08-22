@@ -28,7 +28,8 @@ class EmailNotifier:
         msg["Subject"] = message.title
         msg["From"] = self._from_addr
         msg["To"] = self._to_addr
-        msg.set_content(f"{message.body}\n\nPR: {message.pr_url}")
+        pr_line = f"\n\nPR: {message.pr_url}" if message.pr_url else ""
+        msg.set_content(f"{message.body}{pr_line}")
 
         with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._timeout) as smtp:
             smtp.starttls()
