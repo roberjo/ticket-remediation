@@ -1,6 +1,8 @@
 import subprocess
 from unittest.mock import patch
 
+import pytest
+
 from ticket_remediation.connectors.github import git_ops
 
 
@@ -145,3 +147,26 @@ def test_clone_branch_commit_push_against_local_bare_remote(tmp_path, monkeypatc
         ["git", "branch"], cwd=origin, check=True, capture_output=True, text=True
     ).stdout
     assert "remediate/AVREM-1-fix" in branches
+
+
+def test_clone_failure_does_not_leak_token_in_exception(tmp_path, monkeypatch):
+    """Regression test: subprocess.CalledProcessError.__str__ embeds argv verbatim, and
+    that str(exc) is what remediate/pipeline.py stores as remediation_runs.error_message
+    and what `remediate show` prints. A failed clone/fetch/push must never surface the
+    raw token, in argv or in git's own stdout/stderr."""
+    secret_token = "ghs_supersecrettoken0123456789"
+    monkeypatch.setattr(
+        git_ops,
+        "_authenticated_url",
+        lambda repo_full_name, token: f"https://x-access-token:{token}@127.0.0.1:1/{repo_full_name}.git",
+    )
+
+    with pytest.raises(git_ops.GitCommandError) as exc_info:
+        git_ops.clone_or_update("org/some-repo", secret_token, "main", tmp_path)
+
+    message = str(exc_info.value)
+    assert secret_token not in message
+    assert "***REDACTED***" in message
+    assert "git" in message
+    assert "clone" in message
+    assert "some-repo" in message

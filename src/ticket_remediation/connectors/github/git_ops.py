@@ -1,9 +1,37 @@
+import re
 import subprocess
 from pathlib import Path
 
+# Matches the credentials portion of an _authenticated_url(...) result, independent of
+# the token's actual value, so it can redact that value out of argv *and* out of git's
+# own stdout/stderr (which often echoes the remote URL back verbatim on failure).
+_TOKEN_URL_RE = re.compile(r"x-access-token:[^@]+@")
+_REDACTED = "x-access-token:***REDACTED***@"
+
+
+class GitCommandError(subprocess.SubprocessError):
+    """Raised instead of subprocess.CalledProcessError for any failed git invocation.
+    CalledProcessError.__str__ embeds argv verbatim, which for us can contain an
+    authenticated clone URL (https://x-access-token:{token}@...); that string ends up
+    stored in remediation_runs.error_message and shown by `remediate show`, so it must
+    never carry the raw token."""
+
+
+def _redact(value: str) -> str:
+    return _TOKEN_URL_RE.sub(_REDACTED, value)
+
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)
+    try:
+        return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        redacted_args = [_redact(a) for a in exc.cmd]
+        stdout = _redact(exc.stdout or "")
+        stderr = _redact(exc.stderr or "")
+        raise GitCommandError(
+            f"Command {redacted_args} returned non-zero exit status {exc.returncode}. "
+            f"stdout={stdout!r} stderr={stderr!r}"
+        ) from None
 
 
 def _authenticated_url(repo_full_name: str, token: str) -> str:
