@@ -44,12 +44,13 @@ def run(
         raise typer.Exit(0) from None
 
     logger.info(
-        "Ingest complete: created=%d skipped=%d failed=%d",
+        "Ingest complete: created=%d skipped=%d failed=%d failed_tables=%d",
         len(result.created),
         result.skipped,
         len(result.failed),
+        len(result.failed_tables),
     )
-    if result.failed:
+    if result.failed or result.failed_tables:
         raise typer.Exit(code=1)
 
 

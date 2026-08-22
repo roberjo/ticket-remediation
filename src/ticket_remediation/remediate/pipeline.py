@@ -21,6 +21,9 @@ from .repo_selector import select_repo
 
 logger = logging.getLogger(__name__)
 
+MAX_EDIT_FILES = 20
+MAX_EDIT_TOTAL_BYTES = 500_000
+
 
 def _slugify(text: str, max_len: int = 40) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
@@ -36,6 +39,7 @@ class RemediateResult:
     opened_prs: list[str] = field(default_factory=list)
     skipped: int = 0
     failed: list[str] = field(default_factory=list)
+    batch_error: str | None = None
 
 
 class RemediatePipeline:
@@ -64,7 +68,12 @@ class RemediatePipeline:
     def run(self, jql_status: str, project_key: str, dry_run: bool = False) -> RemediateResult:
         result = RemediateResult()
         jql = f'project = {project_key} AND status = "{jql_status}"'
-        issues = self._jira.search_issues(jql)
+        try:
+            issues = self._jira.search_issues(jql)
+        except Exception as exc:
+            logger.exception("Failed to search Jira issues with jql=%s", jql)
+            result.batch_error = str(exc)
+            return result
 
         for issue in issues:
             if self._runs.is_already_delivered(issue.key):
@@ -160,6 +169,14 @@ class RemediatePipeline:
             logger.exception("Failed to notify for %s (PR %s was still opened)", issue.key, pr.url)
 
     def _apply_edits(self, repo_path: Path, edits: list[FileEdit]) -> list[str]:
+        if len(edits) > MAX_EDIT_FILES:
+            raise ValueError(f"LLM returned {len(edits)} file edits, exceeding the limit of {MAX_EDIT_FILES}")
+        total_bytes = sum(len(edit.content or "") for edit in edits)
+        if total_bytes > MAX_EDIT_TOTAL_BYTES:
+            raise ValueError(
+                f"LLM edits total {total_bytes} bytes, exceeding the limit of {MAX_EDIT_TOTAL_BYTES}"
+            )
+
         repo_root = repo_path.resolve()
         changed = []
         for edit in edits:

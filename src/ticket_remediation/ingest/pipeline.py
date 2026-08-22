@@ -16,6 +16,7 @@ class IngestResult:
     created: list[str] = field(default_factory=list)
     skipped: int = 0
     failed: list[str] = field(default_factory=list)
+    failed_tables: list[str] = field(default_factory=list)
 
 
 class IngestPipeline:
@@ -35,24 +36,30 @@ class IngestPipeline:
         result = IngestResult()
 
         for rule in self._mapping.rules:
-            tickets = self._snow.fetch_tickets(rule.snow_table)
+            try:
+                tickets = self._snow.fetch_tickets(rule.snow_table)
+            except Exception:
+                logger.exception("Failed to fetch tickets from SNOW table %s", rule.snow_table)
+                result.failed_tables.append(rule.snow_table)
+                continue
+
             for ticket in tickets:
                 if self._links.get_jira_key(rule.snow_table, ticket.sys_id) is not None:
                     result.skipped += 1
                     continue
 
-                payload = to_jira_payload(ticket, rule)
-
-                if dry_run:
-                    logger.info(
-                        "[dry-run] would create Jira issue for %s: %s",
-                        ticket.number,
-                        payload.summary,
-                    )
-                    result.created.append(f"[dry-run] {ticket.number}")
-                    continue
-
                 try:
+                    payload = to_jira_payload(ticket, rule)
+
+                    if dry_run:
+                        logger.info(
+                            "[dry-run] would create Jira issue for %s: %s",
+                            ticket.number,
+                            payload.summary,
+                        )
+                        result.created.append(f"[dry-run] {ticket.number}")
+                        continue
+
                     ref = self._jira.create_issue(payload)
                 except Exception:
                     logger.exception("Failed to create Jira issue for SNOW ticket %s", ticket.number)

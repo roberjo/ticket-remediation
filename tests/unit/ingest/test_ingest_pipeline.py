@@ -26,11 +26,20 @@ def _ticket(sys_id: str, number: str, short_description: str = "Reflected XSS in
 
 
 class FakeServiceNowClient:
-    def __init__(self, tickets: list[SnowTicket]):
-        self._tickets = tickets
+    def __init__(
+        self,
+        tickets_by_table: dict[str, list[SnowTicket]] | list[SnowTicket],
+        fail_for: set[str] | None = None,
+    ):
+        if isinstance(tickets_by_table, list):
+            tickets_by_table = {"x_avit_findings": tickets_by_table}
+        self._tickets_by_table = tickets_by_table
+        self._fail_for = fail_for or set()
 
     def fetch_tickets(self, table: str, since: datetime | None = None) -> list[SnowTicket]:
-        return self._tickets
+        if table in self._fail_for:
+            raise RuntimeError("SNOW is down")
+        return self._tickets_by_table.get(table, [])
 
 
 class FakeJiraClient:
@@ -57,22 +66,22 @@ class FakeJiraClient:
         raise NotImplementedError
 
 
-def _mapping() -> IngestMappingConfig:
-    return IngestMappingConfig(
-        rules=[
-            {
-                "snow_table": "x_avit_findings",
-                "jira": {
-                    "project_key": "AVREM",
-                    "issue_type": "Vulnerability",
-                    "component_field": "affected_component",
-                    "label_fields": ["severity"],
-                    "summary_template": "{short_description}",
-                    "description_template": "{description}",
-                },
-            }
-        ]
-    )
+def _rule(snow_table: str = "x_avit_findings", summary_template: str = "{short_description}") -> dict:
+    return {
+        "snow_table": snow_table,
+        "jira": {
+            "project_key": "AVREM",
+            "issue_type": "Vulnerability",
+            "component_field": "affected_component",
+            "label_fields": ["severity"],
+            "summary_template": summary_template,
+            "description_template": "{description}",
+        },
+    }
+
+
+def _mapping(*rules: dict) -> IngestMappingConfig:
+    return IngestMappingConfig(rules=list(rules) or [_rule()])
 
 
 def test_ingest_pipeline_creates_one_issue_per_new_ticket(db_conn):
@@ -118,4 +127,41 @@ def test_ingest_pipeline_one_failure_does_not_block_the_rest(db_conn):
 
     assert result.failed == ["AVIT1"]
     assert result.created == ["AVREM-1"]  # the second ticket still gets created
+    assert len(jira.created) == 1
+
+
+def test_ingest_pipeline_one_table_fetch_failure_does_not_block_other_tables(db_conn):
+    tickets_by_table = {
+        "x_avit_findings": [_ticket("sys-1", "AVIT1")],
+        "x_avit_other": [_ticket("sys-2", "AVIT2", short_description="Hardcoded API key")],
+    }
+    snow = FakeServiceNowClient(tickets_by_table, fail_for={"x_avit_findings"})
+    jira = FakeJiraClient()
+    links = LinkRepository(db_conn)
+    mapping = _mapping(_rule("x_avit_findings"), _rule("x_avit_other"))
+
+    result = IngestPipeline(snow, jira, mapping, links).run()
+
+    assert result.failed_tables == ["x_avit_findings"]
+    assert result.created == ["AVREM-1"]
+    assert len(jira.created) == 1
+
+
+def test_ingest_pipeline_bad_mapping_for_one_ticket_does_not_block_others(db_conn):
+    tickets_by_table = {
+        "x_avit_bad": [_ticket("sys-1", "AVIT1", short_description="Reflected XSS in /search")],
+        "x_avit_good": [_ticket("sys-2", "AVIT2", short_description="Hardcoded API key in config.js")],
+    }
+    snow = FakeServiceNowClient(tickets_by_table)
+    jira = FakeJiraClient()
+    links = LinkRepository(db_conn)
+    mapping = _mapping(
+        _rule("x_avit_bad", summary_template="{missing_field}"),
+        _rule("x_avit_good"),
+    )
+
+    result = IngestPipeline(snow, jira, mapping, links).run()
+
+    assert result.failed == ["AVIT1"]
+    assert result.created == ["AVREM-1"]  # the ticket with a working mapping still succeeds
     assert len(jira.created) == 1

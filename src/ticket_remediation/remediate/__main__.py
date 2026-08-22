@@ -71,7 +71,9 @@ def run(
         result.skipped,
         len(result.failed),
     )
-    if result.failed:
+    if result.batch_error:
+        logger.error("Remediate batch failed: %s", result.batch_error)
+    if result.failed or result.batch_error:
         raise typer.Exit(code=1)
 
 

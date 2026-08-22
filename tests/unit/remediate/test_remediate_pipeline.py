@@ -26,15 +26,18 @@ def _issue(key: str = "AVREM-1", status: str = "Ready for Remediation") -> JiraI
 
 
 class FakeJiraClient:
-    def __init__(self, issues: list[JiraIssue], fail_comment: bool = False):
+    def __init__(self, issues: list[JiraIssue], fail_comment: bool = False, fail_search: bool = False):
         self._issues = issues
         self._fail_comment = fail_comment
+        self._fail_search = fail_search
         self.comments: list[tuple[str, str]] = []
 
     def create_issue(self, payload):
         raise NotImplementedError
 
     def search_issues(self, jql: str) -> list[JiraIssue]:
+        if self._fail_search:
+            raise RuntimeError("Jira search is down")
         return self._issues
 
     def add_comment(self, key: str, body: str) -> None:
@@ -66,6 +69,19 @@ class FakeLLMProvider:
             summary="Escape the query param before rendering",
             commit_message="Fix reflected XSS in search results",
             edits=[FileEdit(path="src/app.js", action="modify", content="console.log('fixed');\n")],
+        )
+
+
+class TooManyEditsLLMProvider:
+    def generate_remediation(self, request: RemediationRequest, file_reader) -> RemediationResponse:
+        edits = [
+            FileEdit(path=f"src/file{i}.js", action="modify", content="x")
+            for i in range(pipeline_module.MAX_EDIT_FILES + 1)
+        ]
+        return RemediationResponse(
+            summary="Too many files changed",
+            commit_message="Change everything",
+            edits=edits,
         )
 
 
@@ -192,3 +208,41 @@ def test_pr_stays_recorded_as_open_even_if_the_jira_comment_fails(
     run = runs.get_run("AVREM-1")
     assert run["status"] == "pr_open"
     assert runs.is_already_delivered("AVREM-1")
+
+
+def test_remediate_pipeline_records_batch_error_when_search_issues_fails(
+    monkeypatch, routing, db_conn, tmp_path
+):
+    jira = FakeJiraClient([], fail_search=True)
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path).run(
+        jql_status="Ready for Remediation", project_key="AVREM"
+    )
+
+    assert result.batch_error == "Jira search is down"
+    assert result.opened_prs == []
+    assert result.failed == []
+    assert github.prs_opened == []
+
+
+def test_remediate_pipeline_fails_and_writes_nothing_when_llm_returns_too_many_edits(
+    monkeypatch, local_repo, routing, db_conn, tmp_path
+):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(
+        jira, github, TooManyEditsLLMProvider(), FakeNotifier(), routing, runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert result.failed == ["AVREM-1"]
+    assert result.opened_prs == []
+    assert github.prs_opened == []
+    assert not (local_repo / "src" / "file0.js").exists()
+    assert (local_repo / "src" / "app.js").read_text() == "console.log('hi');\n"
