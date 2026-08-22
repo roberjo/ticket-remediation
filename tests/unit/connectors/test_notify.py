@@ -56,6 +56,7 @@ def test_email_notifier_sends_expected_message(mock_smtp_cls):
         to_addr="team@example.com",
     ).notify(_message())
 
+    mock_smtp_cls.assert_called_once_with("smtp.example.com", 587, timeout=15.0)
     mock_smtp.login.assert_called_once_with("user", "pass")
     sent_msg = mock_smtp.send_message.call_args.args[0]
     assert sent_msg["To"] == "team@example.com"

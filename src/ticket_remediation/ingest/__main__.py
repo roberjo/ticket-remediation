@@ -9,6 +9,7 @@ from ticket_remediation.connectors.servicenow.rest import ServiceNowRestClient
 from ticket_remediation.db.connection import get_connection
 from ticket_remediation.db.repository import LinkRepository
 from ticket_remediation.logging_config import configure_logging
+from ticket_remediation.pipeline_lock import LockHeldError, pipeline_lock
 
 from .pipeline import IngestPipeline
 
@@ -34,7 +35,13 @@ def run(
     conn = get_connection(settings.sqlite_db_path)
     links = LinkRepository(conn)
 
-    result = IngestPipeline(snow, jira, mapping, links).run(dry_run=dry_run)
+    lock_path = settings.sqlite_db_path.parent / "ingest.lock"
+    try:
+        with pipeline_lock(lock_path):
+            result = IngestPipeline(snow, jira, mapping, links).run(dry_run=dry_run)
+    except LockHeldError:
+        logger.info("Another ingest run is already in progress, skipping this tick")
+        raise typer.Exit(0) from None
 
     logger.info(
         "Ingest complete: created=%d skipped=%d failed=%d",

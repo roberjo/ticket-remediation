@@ -13,6 +13,7 @@ class EmailNotifier:
         smtp_password: str,
         from_addr: str,
         to_addr: str,
+        timeout: float = 15.0,
     ):
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
@@ -20,6 +21,7 @@ class EmailNotifier:
         self._smtp_password = smtp_password
         self._from_addr = from_addr
         self._to_addr = to_addr
+        self._timeout = timeout
 
     def notify(self, message: NotificationMessage) -> None:
         msg = EmailMessage()
@@ -28,7 +30,7 @@ class EmailNotifier:
         msg["To"] = self._to_addr
         msg.set_content(f"{message.body}\n\nPR: {message.pr_url}")
 
-        with smtplib.SMTP(self._smtp_host, self._smtp_port) as smtp:
+        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._timeout) as smtp:
             smtp.starttls()
             if self._smtp_user:
                 smtp.login(self._smtp_user, self._smtp_password)

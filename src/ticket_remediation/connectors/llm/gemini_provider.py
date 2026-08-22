@@ -4,51 +4,29 @@ from google import genai
 
 from .base import FileReader, RemediationRequest, RemediationResponse
 from .limits import MAX_FILE_BYTES, MAX_FILE_READS
+from .prompts import (
+    READ_FILE_SCHEMA,
+    READ_FILE_TOOL_DESCRIPTION,
+    READ_FILE_TOOL_NAME,
+    SUBMIT_SCHEMA,
+    SUBMIT_TOOL_DESCRIPTION,
+    SUBMIT_TOOL_NAME,
+    SYSTEM_PROMPT,
+)
 
 READ_FILE_TOOL = {
     "type": "function",
-    "name": "read_file",
-    "description": "Read the contents of a file in the target repository, by repo-relative path.",
-    "parameters": {
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"],
-    },
+    "name": READ_FILE_TOOL_NAME,
+    "description": READ_FILE_TOOL_DESCRIPTION,
+    "parameters": READ_FILE_SCHEMA,
 }
 
 SUBMIT_TOOL = {
     "type": "function",
-    "name": "submit_remediation",
-    "description": "Submit the final file edits that remediate the ticket. Call exactly once.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "commit_message": {"type": "string"},
-            "edits": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "action": {"type": "string", "enum": ["create", "modify", "delete"]},
-                        "content": {"type": ["string", "null"]},
-                    },
-                    "required": ["path", "action"],
-                },
-            },
-        },
-        "required": ["summary", "commit_message", "edits"],
-    },
+    "name": SUBMIT_TOOL_NAME,
+    "description": SUBMIT_TOOL_DESCRIPTION,
+    "parameters": SUBMIT_SCHEMA,
 }
-
-SYSTEM_PROMPT = (
-    "You are an automated security-remediation engineer. You will be given a Jira vulnerability "
-    "ticket and a repository file tree. Use the read_file tool to inspect a small, targeted set "
-    "of relevant files, then call submit_remediation exactly once with the FULL new content of "
-    "every file you are changing (not a diff). Only touch files necessary to fix the described "
-    "vulnerability."
-)
 
 
 class GeminiRemediationProvider:

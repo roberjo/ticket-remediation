@@ -11,6 +11,7 @@ from ticket_remediation.connectors.notify.composite import build_notifier
 from ticket_remediation.db.connection import get_connection
 from ticket_remediation.db.repository import RemediationRunRepository
 from ticket_remediation.logging_config import configure_logging
+from ticket_remediation.pipeline_lock import LockHeldError, pipeline_lock
 
 from .pipeline import RemediatePipeline
 
@@ -52,11 +53,17 @@ def run(
         work_dir=settings.work_dir,
     )
 
-    result = pipeline.run(
-        jql_status=settings.jira_remediation_jql_status,
-        project_key=settings.jira_project_key,
-        dry_run=dry_run,
-    )
+    lock_path = settings.sqlite_db_path.parent / "remediate.lock"
+    try:
+        with pipeline_lock(lock_path):
+            result = pipeline.run(
+                jql_status=settings.jira_remediation_jql_status,
+                project_key=settings.jira_project_key,
+                dry_run=dry_run,
+            )
+    except LockHeldError:
+        logger.info("Another remediate run is already in progress, skipping this tick")
+        raise typer.Exit(0) from None
 
     logger.info(
         "Remediate complete: opened=%d skipped=%d failed=%d",
