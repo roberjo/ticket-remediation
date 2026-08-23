@@ -146,3 +146,22 @@ review already does well.
 "opens a PR nobody has to merge" — never a direct push to a protected branch. This is why
 [Cross-Cutting Concerns](08-cross-cutting-and-risks.md) treats PR review, not the LLM's output,
 as the actual security boundary.
+
+## ADR-11: An optional per-route `verify_command` gates the PR, not just review
+
+**Decision.** `RepoRouteTarget.verify_command` (`config/repo_routing.yaml`), when set, is run in
+the repo's own working directory after edits are applied and before commit/push. A nonzero exit
+or timeout stops the run at `stage="verify"` — no branch push, no PR.
+
+**Context.** ADR-10 makes PR review the only approval gate, but review was never meant to also be
+the *first* check that a change even compiles or passes the target repo's own tests — before this,
+nothing did that. A human reviewer shouldn't have to discover a syntax error or a failing test
+that an automated check could have caught before the PR ever existed.
+
+**Consequences.** This isn't a second approval gate — it doesn't judge whether the fix is
+*correct*, only whether the target repo is willing to say the edit didn't break its own build.
+Opt-in per route (unset means unchanged v1 behavior) because not every repo has a fast, reliable
+command to run, and a flaky or slow one would turn into false-negative blocked remediations. The
+command is operator-configured YAML, never LLM- or ticket-derived text, which is why it's run with
+`shell=True` — the same trust boundary `verify_command` sits on already governs
+`config/repo_routing.yaml` generally.

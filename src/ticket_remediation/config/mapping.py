@@ -37,6 +37,10 @@ class RepoRouteTarget(BaseModel):
     owner: str
     name: str
     default_branch: str = "main"
+    # Optional shell command (e.g. "npm run lint && npm test") run in the repo's own working
+    # directory after the LLM's edits are applied and before they're committed/pushed. A nonzero
+    # exit blocks the PR from ever being opened. Unset means no verification — opt-in per route.
+    verify_command: str | None = None
 
     @property
     def full_name(self) -> str:

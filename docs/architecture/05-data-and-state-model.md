@@ -92,7 +92,7 @@ stateDiagram-v2
     [*] --> NoRecord : no row for this jira_key
     NoRecord --> branch_created : clone_or_update + create_branch succeed
     branch_created --> pr_open : PR created successfully
-    branch_created --> failed : exception anywhere before the PR is created
+    branch_created --> failed : exception anywhere before the PR is created (stage records where)
     failed --> branch_created : next cron tick retries from scratch
     pr_open --> pr_merged : not implemented in v1 — reserved for a future poller
     pr_open --> [*] : is_already_delivered() = True, future runs skip

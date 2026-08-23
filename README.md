@@ -103,7 +103,7 @@ be edited for your own org.
 |---|---|
 | `.env` | Secrets and per-environment endpoints (never committed — see [Security](#security)) |
 | [`config/ingest_mapping.yaml`](config/ingest_mapping.yaml) | SNOW table → Jira project/issue-type/component/label mapping rules |
-| [`config/repo_routing.yaml`](config/repo_routing.yaml) | Jira project/component → target GitHub repo |
+| [`config/repo_routing.yaml`](config/repo_routing.yaml) | Jira project/component → target GitHub repo, plus an optional per-route `verify_command` run against the LLM's edits before a PR is opened |
 
 Key `.env` groups:
 

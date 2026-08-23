@@ -147,6 +147,24 @@ def routing() -> RepoRoutingConfig:
     )
 
 
+def _routing_with_verify(verify_command: str) -> RepoRoutingConfig:
+    return RepoRoutingConfig.model_validate(
+        {
+            "routes": [
+                {
+                    "match": {"project_key": "AVREM", "components": ["frontend"]},
+                    "repo": {
+                        "owner": "demo-org",
+                        "name": "vulnerable-react-demo-app",
+                        "default_branch": "main",
+                        "verify_command": verify_command,
+                    },
+                }
+            ]
+        }
+    )
+
+
 def _pipeline(
     jira,
     github,
@@ -193,6 +211,88 @@ def test_remediate_pipeline_opens_pr_and_notifies(monkeypatch, local_repo, routi
     assert jira.comments  # PR link commented back onto the ticket
     assert runs.is_already_delivered("AVREM-1")
     assert (local_repo / "src" / "app.js").read_text() == "console.log('fixed');\n"
+
+
+def test_verify_command_success_still_opens_the_pr(monkeypatch, local_repo, db_conn, tmp_path):
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(
+        jira, github, FakeLLMProvider(), FakeNotifier(), _routing_with_verify("true"), runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert result.opened_prs == ["AVREM-1"]
+    assert len(github.prs_opened) == 1
+
+
+def test_verify_command_failure_blocks_the_pr(monkeypatch, local_repo, db_conn, tmp_path):
+    """A syntactically broken or test-failing LLM edit must never reach PR review as if it
+    were untested — a nonzero verify_command exit stops the pipeline before commit/push."""
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(
+        jira, github, FakeLLMProvider(), FakeNotifier(), _routing_with_verify("false"), runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert result.opened_prs == []
+    assert result.failed == ["AVREM-1"]
+    assert github.prs_opened == []
+    run = runs.get_run("AVREM-1")
+    assert run["stage"] == "verify"
+    assert run["status"] == "failed"
+
+
+def test_verify_command_timeout_blocks_the_pr(monkeypatch, local_repo, db_conn, tmp_path):
+    real_run = subprocess.run
+
+    def _run_or_timeout(args, *posargs, **kwargs):
+        # subprocess is a process-wide singleton module, so this fake must only intercept the
+        # verify_command call and pass everything else (git_ops's own calls) through untouched.
+        if kwargs.get("shell"):
+            raise subprocess.TimeoutExpired(cmd=args, timeout=pipeline_module.VERIFY_TIMEOUT_SECONDS)
+        return real_run(args, *posargs, **kwargs)
+
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline_module.subprocess, "run", _run_or_timeout)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(
+        jira, github, FakeLLMProvider(), FakeNotifier(), _routing_with_verify("sleep 999"), runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert result.opened_prs == []
+    assert result.failed == ["AVREM-1"]
+    assert runs.get_run("AVREM-1")["stage"] == "verify"
+
+
+def test_no_verify_command_configured_skips_verification(monkeypatch, local_repo, routing, db_conn, tmp_path):
+    """routing has no verify_command set — confirms the feature is opt-in per route and doesn't
+    change behavior for a route that never configured one."""
+    monkeypatch.setattr(pipeline_module.git_ops, "clone_or_update", lambda *a, **k: local_repo)
+    monkeypatch.setattr(pipeline_module.git_ops, "push_branch", lambda *a, **k: None)
+
+    jira = FakeJiraClient([_issue()])
+    github = FakeGitHubClient()
+    runs = RemediationRunRepository(db_conn)
+
+    result = _pipeline(
+        jira, github, FakeLLMProvider(), FakeNotifier(), routing, runs, tmp_path
+    ).run(jql_status="Ready for Remediation", project_key="AVREM")
+
+    assert result.opened_prs == ["AVREM-1"]
 
 
 def test_remediate_pipeline_skips_already_delivered_issue(

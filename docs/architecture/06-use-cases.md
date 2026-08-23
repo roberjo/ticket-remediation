@@ -80,10 +80,17 @@ flowchart LR
   3. For each issue: resolve the target repo, clone/update it, create a fix branch.
   4. Hand the repo's file tree and a bounded file-read tool to the configured LLM provider along
      with the issue's summary/description; receive back a set of full-content file edits.
-  5. Apply the edits (rejecting any path that escapes the repo), commit, push.
-  6. Open a PR against the repo's default branch; comment the PR link back onto the Jira issue;
-     notify the configured channels.
+  5. Apply the edits (rejecting any path that escapes the repo).
+  6. If the repo route configures a `verify_command`, run it in the repo's working directory; a
+     nonzero exit or timeout stops here — see the alternate flow below.
+  7. Commit, push, open a PR against the repo's default branch; comment the PR link back onto the
+     Jira issue; notify the configured channels.
 - **Alternate flow — already delivered:** Skip (see [state model](05-data-and-state-model.md)).
+- **Alternate flow — verification fails:** The repo route's `verify_command` (its own
+  lint/build/test command) exits nonzero or times out. Recorded as `status="failed"`,
+  `stage="verify"` — no commit, push, or PR happens, so a syntactically broken or test-failing
+  edit never reaches human review looking like an untested one. Opt-in per route; a route with no
+  `verify_command` configured behaves exactly as before.
 - **Alternate flow — no repo route:** Log a warning, record as failed, continue to the next
   issue — this is a configuration gap (add a route), not a transient failure, so the *next* run
   will fail the same way until routing is fixed.

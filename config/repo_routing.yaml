@@ -14,3 +14,10 @@ routes:
       owner: roberjo
       name: vulnerable-react-demo-app
       default_branch: main
+      # Optional: a shell command run in the repo's own working directory after the LLM's
+      # edits are applied, before commit/push/PR. A nonzero exit blocks the PR entirely — see
+      # ADR-11 in docs/architecture/02-solution-strategy.md. Left unset here since this demo
+      # repo's own lint/test scripts aren't guaranteed stable enough not to false-negative
+      # block a remediation; uncomment and adjust once you've confirmed the command is fast
+      # and reliable against your target repo.
+      # verify_command: "npm run lint && npm test"

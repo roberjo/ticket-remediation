@@ -1,5 +1,6 @@
 import logging
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 MAX_EDIT_FILES = 20
 MAX_EDIT_TOTAL_BYTES = 500_000
+VERIFY_TIMEOUT_SECONDS = 300
+VERIFY_OUTPUT_TAIL_CHARS = 2000
 
 
 def _slugify(text: str, max_len: int = 40) -> str:
@@ -51,6 +54,10 @@ class RemediationStageError(Exception):
     def __init__(self, stage: str, original: Exception):
         super().__init__(str(original))
         self.stage = stage
+
+
+class VerificationFailedError(Exception):
+    """Raised when a repo route's verify_command exits nonzero or times out."""
 
 
 class RemediatePipeline:
@@ -198,6 +205,12 @@ class RemediatePipeline:
         except Exception as exc:
             raise RemediationStageError("apply_edits", exc) from exc
 
+        if repo_target.verify_command:
+            try:
+                self._verify_edits(repo_path, repo_target.verify_command)
+            except Exception as exc:
+                raise RemediationStageError("verify", exc) from exc
+
         if dry_run:
             logger.info("[dry-run] %s would change: %s", issue.key, changed_files)
             return
@@ -243,6 +256,33 @@ class RemediatePipeline:
             )
         except Exception:
             logger.exception("Failed to notify for %s (PR %s was still opened)", issue.key, pr.url)
+
+    def _verify_edits(self, repo_path: Path, command: str) -> None:
+        """Runs the repo route's verify_command (e.g. "npm run lint && npm test") against the
+        LLM's edits before they're committed/pushed, so a syntactically broken or test-failing
+        fix never reaches a human's PR review as if it were untested. command is operator-set
+        in repo_routing.yaml, never LLM/ticket-derived text, so shell=True here is intentional —
+        it's the only way to support "a && b" style verify commands."""
+        try:
+            result = subprocess.run(  # noqa: S602
+                command,
+                shell=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=VERIFY_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise VerificationFailedError(
+                f"verify_command {command!r} did not finish within {VERIFY_TIMEOUT_SECONDS}s"
+            ) from exc
+
+        if result.returncode != 0:
+            raise VerificationFailedError(
+                f"verify_command {command!r} exited {result.returncode}\n"
+                f"stdout: {result.stdout[-VERIFY_OUTPUT_TAIL_CHARS:]}\n"
+                f"stderr: {result.stderr[-VERIFY_OUTPUT_TAIL_CHARS:]}"
+            )
 
     def _apply_edits(self, repo_path: Path, edits: list[FileEdit]) -> list[str]:
         if len(edits) > MAX_EDIT_FILES:
