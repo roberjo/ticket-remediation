@@ -31,6 +31,8 @@ dev = [
     "mypy>=1.10",
     "types-pyyaml>=6.0",
     "pip-audit>=2.7",
+    "pytest-cov>=7.1.0",
+    "pre-commit>=4.6.2",
 ]
 
 [build-system]
@@ -70,4 +72,15 @@ testpaths = ["tests"]
 addopts = "-m 'not contract'"
 markers = [
     "contract: spins up an in-process mock server and hits it over real HTTP",
+]
+
+[tool.coverage.run]
+source = ["ticket_remediation"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.$",
 ]

@@ -159,6 +159,7 @@ for the pattern.
 ```bash
 uv run pytest              # fast, no network — Protocol fakes + respx-mocked HTTP
 uv run pytest -m contract  # spins up mock servers in-process, hits them over real HTTP
+uv run pytest --cov=ticket_remediation --cov-report=term-missing  # coverage, gated at 85% in CI
 uv run ruff check .
 uv run mypy src
 uv run pip-audit           # scans the synced environment for known CVEs via the OSV/PyPI
@@ -167,8 +168,13 @@ uv run pip-audit           # scans the synced environment for known CVEs via the
                             # (unlike ruff/mypy, which run fully offline)
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `ruff`, `mypy`, both `pytest`
-tiers, and `pip-audit` (advisory, non-blocking) on every push to `main` and every PR.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `ruff` (including the
+bandit-derived `S` security ruleset) and `mypy` once, then both `pytest` tiers with coverage on a
+Python 3.11/3.12/3.13 matrix, and `pip-audit` (advisory, non-blocking) — on every push to `main`
+and every PR.
+
+`uv run pre-commit install` (once, after `uv sync`) adds a local pre-commit hook that scans staged
+changes for secrets before they ever reach a commit — see [`.pre-commit-config.yaml`](.pre-commit-config.yaml).
 
 ## Security
 
@@ -202,8 +208,9 @@ This is a v1 narrow slice, not a general-purpose platform. Deliberately not buil
 
 ## Contributing
 
-This is currently a personal/portfolio project without a formal contribution process. Issues and
-PRs are welcome; please run the test/lint/type-check commands above before submitting.
+This is currently a personal/portfolio project without a formal governance process. Issues and
+PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the pre-submit checklist, and
+the conventions this codebase already follows.
 
 ## License
 

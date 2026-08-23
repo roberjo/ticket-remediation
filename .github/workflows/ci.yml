@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,12 +25,31 @@ jobs:
       - name: Type-check (mypy)
         run: uv run mypy src
 
-      - name: Unit tests (no network)
-        run: uv run pytest
-
-      - name: Contract tests (in-process mock servers)
-        run: uv run pytest -m contract
-
       - name: Dependency vulnerability scan (advisory — see docs/architecture/08-cross-cutting-and-risks.md)
         run: uv run pip-audit
         continue-on-error: true
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject.toml declares requires-python = ">=3.11"; prove all three, not just the
+        # one version lint/type-check happens to run under.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --extra mocks --group dev
+
+      - name: Unit tests (no network), with coverage
+        run: uv run pytest --cov=ticket_remediation --cov-report=term-missing
+
+      - name: Contract tests (in-process mock servers)
+        run: uv run pytest -m contract
