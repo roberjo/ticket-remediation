@@ -21,10 +21,10 @@
   give the LLM real flaws to fix; its patterns (public S3 bucket, wildcard IAM policy,
   `dangerouslySetInnerHTML`, etc.) are documented in its own README specifically as anti-patterns,
   not reference implementations, and its Terraform is never `apply`'d — only read and edited.
-- **Dependency-vulnerability scanning is configured**: `pip-audit` (run locally against the synced
-  environment, see the README's Testing section) and GitHub Dependabot
-  (`.github/dependabot.yml`, weekly `uv`-ecosystem version-update PRs). Neither is enforced by a
-  CI gate — see [Risks](#risks--known-limitations).
+- **Dependency-vulnerability scanning is configured**: `pip-audit` (see the README's Testing
+  section; also runs in CI as an advisory, non-blocking step) and GitHub Dependabot
+  (`.github/dependabot.yml`, weekly `uv`-ecosystem version-update PRs, still human-reviewed
+  rather than auto-merged) — see [Risks](#risks--known-limitations).
 
 ## Testing strategy
 
@@ -44,8 +44,14 @@ Three tiers, from fastest/most-isolated to slowest/most-realistic:
    branch → PR → notify chain actually works, not just that each piece is individually correct.
    This is how three real bugs were found (see below) that no unit test caught.
 
-The default `pytest` run hits no network and needs no credentials — see
-[Deployment View](07-deployment-view.md) for how the live-verification tier is run.
+The default `pytest` run hits no network and needs no credentials. A fourth tier,
+**contract tests** (`tests/contract/`, `pytest -m contract`), sits between tiers 1 and 3: the real
+`mock_servers` FastAPI apps are started in-process (real HTTP, ephemeral port) and the REST
+connectors (`ServiceNowRestClient`, `JiraRestClient`) are run against them for real, catching
+request/response shape mismatches that a respx fixture can't (respx only ever confirms a client
+matches the shape a human wrote into the fixture, not the shape a server actually sends). CI
+(`.github/workflows/ci.yml`) runs both the default tier and `-m contract` on every push/PR — see
+[Deployment View](07-deployment-view.md) for how the live-verification tier (3) is run.
 
 ## Error-handling philosophy
 
@@ -84,7 +90,7 @@ omitted:
 | **Single-writer SQLite** doesn't support multiple concurrent pipeline instances against the same `data/state.db` | v1 has one scheduled instance of each pipeline; horizontal scaling was never a goal |
 | **No PR-merge detection** — `remediation_runs.status` never reaches `pr_merged` in practice | The state model reserves the value, but nothing polls GitHub or receives a webhook to set it; a merged PR is simply left `pr_open` forever, which is harmless (still correctly treated as "already delivered") but not fully accurate |
 | **No retry/backoff framework** | A failed run is retried wholesale on the next cron tick; there's no exponential backoff or max-attempt cap, so a persistently-broken route (e.g. a missing repo-routing rule) will fail identically on every tick until fixed |
-| **Dependency-vulnerability scanning is not CI-enforced** — `pip-audit` and Dependabot are configured (see [Security](#security)), but there's no CI to run `pip-audit` on every push or auto-merge/require review of Dependabot PRs | No CI exists yet (see [Testing strategy](#testing-strategy)); a human has to run `pip-audit` locally and review each Dependabot PR |
+| **Dependency-vulnerability scanning is not a hard CI gate** — CI runs `pip-audit` on every push/PR (see [Security](#security)), but as an advisory, non-blocking step, and Dependabot PRs still require human review/merge | A CVE with no available fix shouldn't block unrelated pushes; a human still has to act on findings and review each Dependabot PR |
 | **No webhook trigger** | Findings/issues are only picked up on the next poll, not instantly — an explicit trade for zero-infrastructure local development (ADR-2) |
 | **No human-approval gate on LLM output** | Explicit product decision, not an oversight — PR review is the gate (ADR-10) |
 | **No multi-tenant configuration** | One `.env`, one set of routing rules, per deployment |

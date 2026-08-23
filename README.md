@@ -167,8 +167,8 @@ uv run pip-audit           # scans the synced environment for known CVEs via the
                             # (unlike ruff/mypy, which run fully offline)
 ```
 
-CI is not yet configured for this repo — running the above locally before pushing is currently
-the only gate.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `ruff`, `mypy`, both `pytest`
+tiers, and `pip-audit` (advisory, non-blocking) on every push to `main` and every PR.
 
 ## Security
 
@@ -184,10 +184,10 @@ the only gate.
 - The sample target app under `scaffold/vulnerable-react-demo-app/` contains **intentional**
   vulnerabilities for demo purposes only — see that repo's own README before treating any of its
   patterns as something to copy into real code.
-- Dependency-vulnerability scanning is in place via `pip-audit` (local, see
-  [Testing](#testing)) and GitHub Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml),
-  automated version-update PRs). Neither is wired into a CI gate (there isn't one yet — see
-  above), so both remain contributor-run / human-reviewed rather than enforced.
+- Dependency-vulnerability scanning is in place via `pip-audit` (also runs in CI, see
+  [Testing](#testing), but advisory/non-blocking rather than a hard gate) and GitHub Dependabot
+  ([`.github/dependabot.yml`](.github/dependabot.yml), automated version-update PRs, still
+  human-reviewed rather than auto-merged).
 
 ## Roadmap / out of scope for now
 

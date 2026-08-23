@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Sync dependencies
+        run: uv sync --extra mocks --group dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy src
+
+      - name: Unit tests (no network)
+        run: uv run pytest
+
+      - name: Contract tests (in-process mock servers)
+        run: uv run pytest -m contract
+
+      - name: Dependency vulnerability scan (advisory — see docs/architecture/08-cross-cutting-and-risks.md)
+        run: uv run pip-audit
+        continue-on-error: true

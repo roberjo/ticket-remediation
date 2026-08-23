@@ -1,4 +1,4 @@
-from github import Github
+from github import Auth, Github
 
 from .base import PullRequestRef
 
@@ -9,7 +9,7 @@ class GitHubRestClient:
     """
 
     def __init__(self, token: str):
-        self._gh = Github(token)
+        self._gh = Github(auth=Auth.Token(token))
 
     def get_default_branch(self, repo_full_name: str) -> str:
         repo = self._gh.get_repo(repo_full_name)
