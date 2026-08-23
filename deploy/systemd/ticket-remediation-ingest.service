@@ -1,0 +1,13 @@
+[Unit]
+Description=ticket-remediation: ingest run (ServiceNow -> Jira)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ticket-remediation
+WorkingDirectory=/opt/ticket-remediation
+EnvironmentFile=/opt/ticket-remediation/.env
+# Direct venv invocation, not `uv run` — the venv already exists (built once via
+# `uv sync --group dev`), so there's no reason to pay uv's resolve/sync check on every timer fire.
+ExecStart=/opt/ticket-remediation/.venv/bin/python -m ticket_remediation.ingest run

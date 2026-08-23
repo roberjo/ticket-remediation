@@ -129,6 +129,13 @@ Two implementations ship:
 Adding another provider means implementing the `LLMProvider` protocol and one branch in
 [`connectors/llm/factory.py`](src/ticket_remediation/connectors/llm/factory.py).
 
+## Deployment
+
+Both CLIs are meant to be invoked by cron (or any scheduler) — see
+[Deployment View](docs/architecture/07-deployment-view.md) for the architecture, and
+[`deploy/`](deploy/) for three worked, ready-to-adapt examples: a bare checkout plus a crontab,
+a bare checkout plus systemd timers, and a [`Dockerfile`](Dockerfile) plus either of those.
+
 ## Project layout
 
 ```

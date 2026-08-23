@@ -1,0 +1,20 @@
+# Example crontab for a bare-host deployment (no Docker) — see the "Real-service,
+# cron-scheduled deployment" diagram in docs/architecture/07-deployment-view.md.
+#
+# Install with: crontab -e   (as whatever user owns APP_DIR and its data/work directories)
+# or copy to /etc/cron.d/ticket-remediation (then the user field is required — see `man 5 crontab`).
+#
+# Prerequisites at APP_DIR: `uv sync --group dev` already run once, and .env populated with
+# real credentials (see .env.example) — not the mock-mode .env.mock.example.
+
+APP_DIR=/opt/ticket-remediation
+LOG_DIR=/var/log/ticket-remediation
+
+# Adjust cadence to how quickly you need findings/tickets picked up — there's no
+# webhook trigger in v1 (ADR-2), so latency is bounded by these intervals.
+*/15 * * * * cd $APP_DIR && uv run python -m ticket_remediation.ingest run >> $LOG_DIR/ingest.log 2>&1
+*/15 * * * * cd $APP_DIR && uv run python -m ticket_remediation.remediate run >> $LOG_DIR/remediate.log 2>&1
+
+# Safe to run far more often than `run`: sync-pr-status only reads GitHub PR state and
+# writes to the state DB — it never touches Jira, the LLM, or a git working directory.
+*/5  * * * * cd $APP_DIR && uv run python -m ticket_remediation.remediate sync-pr-status >> $LOG_DIR/sync-pr-status.log 2>&1

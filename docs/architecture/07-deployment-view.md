@@ -88,8 +88,12 @@ flowchart TB
 3.11+, `uv` (or a pre-built venv), `git`, network egress to the six external systems, and a place
 for `data/state.db` and `work/` to persist between runs (both are plain files/directories — no
 managed storage needed). A single small VM, a container with a persistent volume, or a scheduled
-CI job with a cache are all equally valid; none has been chosen or built for v1 (see
-[Risks](08-cross-cutting-and-risks.md)).
+CI job with a cache are all equally valid. [`deploy/`](../../deploy/) has three worked examples —
+a bare checkout with cron, a bare checkout with systemd timers, and the root
+[`Dockerfile`](../../Dockerfile) — and `remediate sync-pr-status` (see
+[Data & State Model §5.3](05-data-and-state-model.md#53-state-machine--remediation_runsstatus))
+is meant to run on its own, more frequent schedule than `run`, since it never touches `work/` or
+Jira/the LLM.
 
 **What must persist across runs**, and why:
 

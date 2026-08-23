@@ -1,0 +1,11 @@
+[Unit]
+Description=ticket-remediation: remediate sync-pr-status (poll GitHub for merged/closed PRs)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ticket-remediation
+WorkingDirectory=/opt/ticket-remediation
+EnvironmentFile=/opt/ticket-remediation/.env
+ExecStart=/opt/ticket-remediation/.venv/bin/python -m ticket_remediation.remediate sync-pr-status

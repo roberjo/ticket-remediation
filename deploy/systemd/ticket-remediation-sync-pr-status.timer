@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ticket-remediation-sync-pr-status.service every 5 minutes
+
+[Timer]
+# Safe to run more often than the other two: this one only reads GitHub PR state and writes
+# to the state DB — never Jira, the LLM, or a git working directory.
+OnCalendar=*:0/5
+Persistent=true
+
+[Install]
+WantedBy=timers.target
