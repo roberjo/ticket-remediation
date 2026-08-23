@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -6,9 +7,16 @@ MAX_FILES_IN_TREE = 500
 MAX_FILE_READS = 15
 MAX_FILE_BYTES = 20_000
 
+# Resolved once at import time to an absolute path so a cron job's PATH can't be used to
+# smuggle in a different "git" ahead of the real one.
+_GIT = shutil.which("git") or "git"
+
 
 def build_file_tree(repo_path: Path) -> list[str]:
-    result = subprocess.run(["git", "ls-files"], cwd=repo_path, check=True, capture_output=True, text=True)
+    # repo_path is our own clone destination, never external input.
+    result = subprocess.run(  # noqa: S603
+        [_GIT, "ls-files"], cwd=repo_path, check=True, capture_output=True, text=True
+    )
     return result.stdout.splitlines()[:MAX_FILES_IN_TREE]
 
 

@@ -1,4 +1,5 @@
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -7,6 +8,10 @@ from pathlib import Path
 # own stdout/stderr (which often echoes the remote URL back verbatim on failure).
 _TOKEN_URL_RE = re.compile(r"x-access-token:[^@]+@")
 _REDACTED = "x-access-token:***REDACTED***@"
+
+# Resolved once at import time to an absolute path so a cron job's PATH can't be used to
+# smuggle in a different "git" ahead of the real one.
+_GIT = shutil.which("git") or "git"
 
 
 class GitCommandError(subprocess.SubprocessError):
@@ -23,7 +28,9 @@ def _redact(value: str) -> str:
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)
+        # args is always a fixed git subcommand built from constants + our own already-
+        # validated repo_full_name/branch_name/token values below, never raw external input.
+        return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)  # noqa: S603
     except subprocess.CalledProcessError as exc:
         redacted_args = [_redact(a) for a in exc.cmd]
         stdout = _redact(exc.stdout or "")
@@ -49,12 +56,12 @@ def clone_or_update(repo_full_name: str, token: str, default_branch: str, work_d
         # Destination is relative to cwd=work_dir, so pass just the basename here —
         # passing the full repo_path (which already includes work_dir) would clone
         # into work_dir/work_dir/<repo_name> instead.
-        _run(["git", "clone", url, repo_path.name], cwd=work_dir)
+        _run([_GIT, "clone", url, repo_path.name], cwd=work_dir)
     else:
-        _run(["git", "remote", "set-url", "origin", url], cwd=repo_path)
-        _run(["git", "fetch", "origin", default_branch], cwd=repo_path)
-        _run(["git", "checkout", default_branch], cwd=repo_path)
-        _run(["git", "reset", "--hard", f"origin/{default_branch}"], cwd=repo_path)
+        _run([_GIT, "remote", "set-url", "origin", url], cwd=repo_path)
+        _run([_GIT, "fetch", "origin", default_branch], cwd=repo_path)
+        _run([_GIT, "checkout", default_branch], cwd=repo_path)
+        _run([_GIT, "reset", "--hard", f"origin/{default_branch}"], cwd=repo_path)
     return repo_path
 
 
@@ -63,14 +70,14 @@ def create_branch(repo_path: Path, branch_name: str, base_branch: str) -> None:
     documented as safe to delete to reset dev state, but a leftover local branch from an
     earlier attempt can still exist in the reused work/ clone — -B resets it to the
     current base_branch instead of failing with "branch already exists"."""
-    _run(["git", "checkout", base_branch], cwd=repo_path)
-    _run(["git", "checkout", "-B", branch_name], cwd=repo_path)
+    _run([_GIT, "checkout", base_branch], cwd=repo_path)
+    _run([_GIT, "checkout", "-B", branch_name], cwd=repo_path)
 
 
 def commit_all(repo_path: Path, message: str) -> None:
-    _run(["git", "add", "-A"], cwd=repo_path)
-    _run(["git", "commit", "-m", message], cwd=repo_path)
+    _run([_GIT, "add", "-A"], cwd=repo_path)
+    _run([_GIT, "commit", "-m", message], cwd=repo_path)
 
 
 def push_branch(repo_path: Path, branch_name: str) -> None:
-    _run(["git", "push", "-u", "origin", branch_name, "--force-with-lease"], cwd=repo_path)
+    _run([_GIT, "push", "-u", "origin", branch_name, "--force-with-lease"], cwd=repo_path)

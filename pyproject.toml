@@ -45,7 +45,19 @@ line-length = 110
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# S101 (assert): pytest's own idiom for assertions, not a runtime safety check.
+# S105/S106 (hardcoded password): every hit is a fake credential in a test fixture, never
+#   a real one — real credentials only ever come from `.env` (see README Security section).
+# S603/S607 (subprocess/partial-path): tests/unit/connectors/test_git_ops.py and
+#   tests/unit/remediate/test_context_builder.py invoke the real `git` CLI directly to spin
+#   up local bare repos for integration-style tests, not production code paths.
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+# S311 (non-cryptographic random): generates synthetic demo ticket data for the local mock
+# server, never anything security-sensitive.
+"mock_servers/**" = ["S311"]
 
 [tool.mypy]
 python_version = "3.11"

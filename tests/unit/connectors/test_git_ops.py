@@ -11,10 +11,10 @@ def test_create_branch_runs_expected_argv(mock_run, tmp_path):
     git_ops.create_branch(tmp_path, "remediate/AVREM-1-fix", "main")
 
     calls = [c.args[0] for c in mock_run.call_args_list]
-    assert ["git", "checkout", "main"] in calls
+    assert [git_ops._GIT, "checkout", "main"] in calls
     # -B (not -b): create-or-reset, so a leftover branch from an earlier attempt
     # doesn't crash with "branch already exists" — see the regression test below.
-    assert ["git", "checkout", "-B", "remediate/AVREM-1-fix"] in calls
+    assert [git_ops._GIT, "checkout", "-B", "remediate/AVREM-1-fix"] in calls
 
 
 def test_create_branch_is_safe_to_call_twice_for_the_same_branch(tmp_path):
@@ -40,7 +40,7 @@ def test_clone_or_update_clones_when_repo_absent(mock_run, tmp_path):
 
     assert repo_path == tmp_path / "repo"
     clone_call = mock_run.call_args_list[0].args[0]
-    assert clone_call[:2] == ["git", "clone"]
+    assert clone_call[:2] == [git_ops._GIT, "clone"]
     assert clone_call[2] == "https://x-access-token:tok@github.com/org/repo.git"
 
 
@@ -53,14 +53,14 @@ def test_clone_or_update_fetches_and_resets_when_repo_present(mock_run, tmp_path
 
     calls = [c.args[0] for c in mock_run.call_args_list]
     assert [
-        "git",
+        git_ops._GIT,
         "remote",
         "set-url",
         "origin",
         "https://x-access-token:tok@github.com/org/repo.git",
     ] in calls
-    assert ["git", "fetch", "origin", "main"] in calls
-    assert ["git", "reset", "--hard", "origin/main"] in calls
+    assert [git_ops._GIT, "fetch", "origin", "main"] in calls
+    assert [git_ops._GIT, "reset", "--hard", "origin/main"] in calls
 
 
 @patch("ticket_remediation.connectors.github.git_ops.subprocess.run")
@@ -68,8 +68,8 @@ def test_commit_all_runs_expected_argv(mock_run, tmp_path):
     git_ops.commit_all(tmp_path, "AVREM-1: fix")
 
     calls = [c.args[0] for c in mock_run.call_args_list]
-    assert ["git", "add", "-A"] in calls
-    assert ["git", "commit", "-m", "AVREM-1: fix"] in calls
+    assert [git_ops._GIT, "add", "-A"] in calls
+    assert [git_ops._GIT, "commit", "-m", "AVREM-1: fix"] in calls
 
 
 def _init_repo(path, initial_file="README.md", content="# demo\n"):
