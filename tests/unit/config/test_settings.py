@@ -25,3 +25,23 @@ def test_log_level_rejects_invalid_value(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_blank_max_llm_calls_env_value_means_unset(monkeypatch):
+    """Regression test: .env.example documents REMEDIATE_MAX_LLM_CALLS_PER_RUN= (blank = no
+    cap), matching the pattern every str field here uses. Copying that literally into a real
+    .env, or passing it via `docker run --env-file`, sets the process env var to the literal
+    empty string — which used to crash Settings() outright trying to parse "" as an int."""
+    monkeypatch.setenv("REMEDIATE_MAX_LLM_CALLS_PER_RUN", "")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.remediate_max_llm_calls_per_run is None
+
+
+def test_nonblank_max_llm_calls_env_value_still_parses(monkeypatch):
+    monkeypatch.setenv("REMEDIATE_MAX_LLM_CALLS_PER_RUN", "7")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.remediate_max_llm_calls_per_run == 7

@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,3 +53,12 @@ class Settings(BaseSettings):
     ingest_mapping_path: Path = Path("config/ingest_mapping.yaml")
     repo_routing_path: Path = Path("config/repo_routing.yaml")
     work_dir: Path = Field(default=Path("work"))
+
+    @field_validator("remediate_max_llm_calls_per_run", mode="before")
+    @classmethod
+    def _blank_env_value_means_unset(cls, value: Any) -> Any:
+        # .env.example documents this as `REMEDIATE_MAX_LLM_CALLS_PER_RUN=` (blank = no cap).
+        # Every other field here is a str with a blank-string default, so a blank env value
+        # round-trips fine; this is the one int | None field, where pydantic would otherwise
+        # try to parse "" as an integer and crash Settings() outright.
+        return None if value == "" else value
