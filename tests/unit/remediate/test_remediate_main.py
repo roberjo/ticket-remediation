@@ -7,6 +7,7 @@ from ticket_remediation.db.connection import get_connection
 from ticket_remediation.db.repository import RemediationRunRepository
 from ticket_remediation.remediate import __main__ as remediate_main
 from ticket_remediation.remediate.pipeline import RemediateResult
+from ticket_remediation.remediate.pr_sync import PrSyncResult
 
 runner = CliRunner()
 
@@ -35,6 +36,41 @@ class FakePipeline:
     def run(self, **kwargs):
         FakePipeline.last_run_kwargs = kwargs
         return FakePipeline.result
+
+
+class FakeSyncer:
+    result: PrSyncResult = PrSyncResult()
+
+    def __init__(self, github_client, runs):
+        pass
+
+    def sync(self):
+        return FakeSyncer.result
+
+
+def test_sync_pr_status_prints_json_summary(monkeypatch, tmp_path):
+    _seed_db_for_run(monkeypatch, tmp_path)
+    FakeSyncer.result = PrSyncResult(merged=["AVREM-1"], closed=["AVREM-2"], checked=2, errors=[])
+    monkeypatch.setattr(remediate_main, "PrStatusSyncer", FakeSyncer)
+
+    result = runner.invoke(remediate_main.app, ["sync-pr-status", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output.strip().splitlines()[-1])
+    assert payload == {"merged": ["AVREM-1"], "closed": ["AVREM-2"], "checked": 2, "errors": []}
+
+
+def test_sync_pr_status_skips_when_lock_is_held(monkeypatch, tmp_path):
+    _seed_db_for_run(monkeypatch, tmp_path)
+
+    def _raise_lock_held(path):
+        raise remediate_main.LockHeldError(f"lock held: {path}")
+
+    monkeypatch.setattr(remediate_main, "pipeline_lock", _raise_lock_held)
+
+    result = runner.invoke(remediate_main.app, ["sync-pr-status"])
+
+    assert result.exit_code == 0
 
 
 def test_status_reports_no_runs(monkeypatch, tmp_path):

@@ -82,3 +82,7 @@ def test_should_skip_covers_delivered_ignored_and_permanently_failed(db_conn):
 
     runs.upsert_run("AVREM-4", status="failed", error_message="boom")
     assert not runs.should_skip("AVREM-4", max_retries=3)
+
+    runs.upsert_run("AVREM-5", status="pr_closed", repo_full_name="org/repo", pr_number=5)
+    assert runs.should_skip("AVREM-5", max_retries=3)
+    assert not runs.is_already_delivered("AVREM-5")  # closed-without-merge is not "delivered"

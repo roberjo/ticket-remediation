@@ -94,9 +94,11 @@ stateDiagram-v2
     branch_created --> pr_open : PR created successfully
     branch_created --> failed : exception anywhere before the PR is created (stage records where)
     failed --> branch_created : next cron tick retries from scratch
-    pr_open --> pr_merged : not implemented in v1 — reserved for a future poller
+    pr_open --> pr_merged : remediate sync-pr-status polls GitHub, finds pr.merged = true
+    pr_open --> pr_closed : remediate sync-pr-status polls GitHub, finds a closed unmerged PR
     pr_open --> [*] : is_already_delivered() = True, future runs skip
     pr_merged --> [*] : is_already_delivered() = True, future runs skip
+    pr_closed --> [*] : should_skip() = True — a human decision, not auto-retried
 
     note right of pr_open
         Once status="pr_open" is written, add_comment
@@ -108,15 +110,25 @@ stateDiagram-v2
     end note
 
     note right of pr_merged
-        No code path currently sets this. A PR being
-        merged on GitHub is not detected by anything in
-        v1 — is_already_delivered() checks for it only
-        so that a future webhook or polling check can
-        set it without any other code changing.
+        Set by PrStatusSyncer (remediate/pr_sync.py),
+        run via `remediate sync-pr-status` on its own
+        cron schedule — separate from `run` because it
+        only needs GitHub + the state DB, not Jira, the
+        LLM, or a git working directory.
+    end note
+
+    note right of pr_closed
+        A human closed the PR without merging it — a
+        rejection, not a transient failure. should_skip()
+        treats it like "ignored": no automatic retry.
+        A deliberate `remediate run --ticket X --force`
+        is the way to try again.
     end note
 ```
 
 `is_already_delivered()` (`db/repository.py`) is the single idempotency gate `RemediatePipeline`
 checks before doing any work — it returns `True` for `pr_open` or `pr_merged`, `False` for
-everything else (including `NoRecord`, `branch_created`, and `failed`), which is exactly why a
-`failed` run is retried on the next tick rather than stuck.
+everything else (including `NoRecord`, `branch_created`, `failed`, and `pr_closed`), which is
+exactly why a `failed` run is retried on the next tick rather than stuck. `pr_closed` is excluded
+from `is_already_delivered()` (it wasn't actually delivered) but included in `should_skip()`
+alongside `ignored` — a human already made the call, so it isn't retried automatically.

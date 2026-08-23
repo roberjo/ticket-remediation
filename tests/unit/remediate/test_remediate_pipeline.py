@@ -64,6 +64,9 @@ class FakeGitHubClient:
         self.prs_opened.append((repo_full_name, head, base, title))
         return PullRequestRef(number=1, url="https://github.com/org/repo/pull/1")
 
+    def get_pull_request(self, repo_full_name: str, pr_number: int):
+        raise NotImplementedError
+
 
 class FakeLLMProvider:
     def generate_remediation(self, request: RemediationRequest, file_reader) -> RemediationResponse:

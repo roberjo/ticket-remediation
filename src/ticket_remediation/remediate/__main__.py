@@ -16,6 +16,7 @@ from ticket_remediation.logging_config import configure_logging
 from ticket_remediation.pipeline_lock import LockHeldError, pipeline_lock
 
 from .pipeline import RemediatePipeline
+from .pr_sync import PrStatusSyncer
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -107,6 +108,43 @@ def run(
 
     if result.failed or result.batch_error:
         raise typer.Exit(code=1)
+
+
+@app.command(name="sync-pr-status")
+def sync_pr_status(
+    json_output: bool = typer.Option(
+        False, "--json", help="Print the sync summary as a JSON object instead of a log line"
+    ),
+) -> None:
+    """Poll GitHub for every pr_open run and mark it pr_merged/pr_closed as its PR resolves.
+    Meant to run on its own, more frequent cron schedule than `run` — it never touches Jira,
+    the LLM, or a git working directory, only GitHub's PR state and local run records."""
+    settings = Settings()
+    configure_logging(
+        level=getattr(logging, settings.log_level.upper()), json_output=settings.log_format == "json"
+    )
+    github = GitHubRestClient(settings.github_token)
+    conn = get_connection(settings.sqlite_db_path)
+    runs = RemediationRunRepository(conn)
+
+    lock_path = settings.sqlite_db_path.parent / "sync-pr-status.lock"
+    try:
+        with pipeline_lock(lock_path):
+            result = PrStatusSyncer(github, runs).sync()
+    except LockHeldError:
+        logger.info("Another sync-pr-status run is already in progress, skipping this tick")
+        raise typer.Exit(0) from None
+
+    if json_output:
+        typer.echo(json.dumps(asdict(result)))
+    else:
+        logger.info(
+            "PR status sync complete: checked=%d merged=%d closed=%d errors=%d",
+            result.checked,
+            len(result.merged),
+            len(result.closed),
+            len(result.errors),
+        )
 
 
 @app.command()

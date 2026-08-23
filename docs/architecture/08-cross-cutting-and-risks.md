@@ -87,13 +87,12 @@ omitted:
 
 | Risk / limitation | Why it's accepted for now |
 |---|---|
-| **Single-writer SQLite** doesn't support multiple concurrent pipeline instances against the same `data/state.db` | v1 has one scheduled instance of each pipeline; horizontal scaling was never a goal |
-| **No PR-merge detection** — `remediation_runs.status` never reaches `pr_merged` in practice | The state model reserves the value, but nothing polls GitHub or receives a webhook to set it; a merged PR is simply left `pr_open` forever, which is harmless (still correctly treated as "already delivered") but not fully accurate |
+| **Single-writer SQLite** doesn't support multiple concurrent pipeline instances against the same `data/state.db` | v1 has one scheduled instance of each pipeline; horizontal scaling was never a goal. **Deliberately not changing this** — kept on SQLite by explicit decision. |
 | **No retry/backoff framework** | A failed run is retried wholesale on the next cron tick; there's no exponential backoff or max-attempt cap, so a persistently-broken route (e.g. a missing repo-routing rule) will fail identically on every tick until fixed |
 | **Dependency-vulnerability scanning is not a hard CI gate** — CI runs `pip-audit` on every push/PR (see [Security](#security)), but as an advisory, non-blocking step, and Dependabot PRs still require human review/merge | A CVE with no available fix shouldn't block unrelated pushes; a human still has to act on findings and review each Dependabot PR |
 | **No webhook trigger** | Findings/issues are only picked up on the next poll, not instantly — an explicit trade for zero-infrastructure local development (ADR-2) |
 | **No human-approval gate on LLM output** | Explicit product decision, not an oversight — PR review is the gate (ADR-10) |
-| **No multi-tenant configuration** | One `.env`, one set of routing rules, per deployment |
+| **No multi-tenant configuration** | One `.env`, one set of routing rules, per deployment. **Deliberately not changing this** — out of scope by explicit decision, not just unscheduled. |
 
 ## Glossary
 

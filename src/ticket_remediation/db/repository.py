@@ -110,6 +110,9 @@ class RemediationRunRepository:
         if self.is_already_delivered(jira_key):
             return True
         run = self.get_run(jira_key)
-        if run is not None and run["status"] == "ignored":
+        # ignored: an operator decision (see mark_ignored). pr_closed: a human already closed
+        # the PR without merging it — treated the same way, since re-opening a fresh PR for a
+        # rejected fix should be a deliberate `--force` retry, not an automatic one.
+        if run is not None and run["status"] in ("ignored", "pr_closed"):
             return True
         return self.is_permanently_failed(jira_key, max_retries)

@@ -32,3 +32,33 @@ def test_create_pull_request_calls_repo_create_pull_with_expected_args(mock_gith
     )
     assert ref.number == 42
     assert ref.url == "https://github.com/org/repo/pull/42"
+
+
+@patch("ticket_remediation.connectors.github.rest.Github")
+def test_get_pull_request_reports_merged_state(mock_github_cls):
+    mock_pr = MagicMock(number=42, state="closed", merged=True)
+    mock_repo = MagicMock()
+    mock_repo.get_pull.return_value = mock_pr
+    mock_github_cls.return_value.get_repo.return_value = mock_repo
+
+    client = GitHubRestClient("fake-token")
+    state = client.get_pull_request("org/repo", 42)
+
+    mock_repo.get_pull.assert_called_once_with(42)
+    assert state.number == 42
+    assert state.state == "closed"
+    assert state.merged is True
+
+
+@patch("ticket_remediation.connectors.github.rest.Github")
+def test_get_pull_request_reports_open_state(mock_github_cls):
+    mock_pr = MagicMock(number=7, state="open", merged=False)
+    mock_repo = MagicMock()
+    mock_repo.get_pull.return_value = mock_pr
+    mock_github_cls.return_value.get_repo.return_value = mock_repo
+
+    client = GitHubRestClient("fake-token")
+    state = client.get_pull_request("org/repo", 7)
+
+    assert state.state == "open"
+    assert state.merged is False
