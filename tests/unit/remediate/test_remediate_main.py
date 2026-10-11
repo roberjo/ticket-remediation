@@ -1,6 +1,7 @@
 import json
 import logging
 
+import click
 from typer.testing import CliRunner
 
 from ticket_remediation.db.connection import get_connection
@@ -188,8 +189,10 @@ def test_run_force_without_ticket_is_rejected_rather_than_silently_ignored(monke
     result = runner.invoke(remediate_main.app, ["run", "--force"])
 
     assert result.exit_code != 0
-    assert "--force" in result.output
-    assert "--ticket" in result.output
+    # Typer forces rich styling under GITHUB_ACTIONS, which splits "--force" with ANSI codes.
+    output = click.unstyle(result.output)
+    assert "--force" in output
+    assert "--ticket" in output
 
 
 def test_run_force_with_ticket_bypasses_the_skip_gate_only_for_that_ticket(monkeypatch, tmp_path):
