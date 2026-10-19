@@ -3,7 +3,7 @@
 # checkout. Not used by local dev (uv run ... against the mock servers) or CI (see
 # .github/workflows/ci.yml) — those don't need a container.
 
-FROM python:3.12-slim AS base
+FROM python:3.14-slim AS base
 
 # git is a runtime dependency, not a build one: connectors/github/git_ops.py shells out to the
 # real `git` binary for clone/branch/commit/push (see ADR — git_ops.py resolves it to an
